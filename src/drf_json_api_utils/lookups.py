@@ -1,0 +1,21 @@
+EXACT = 'exact'
+IEXACT = 'iexact'
+CONTAINS = 'contains'
+ICONTAINS = 'icontains'
+IN = 'in'
+GT = 'gt'
+GTE = 'gte'
+LT = 'lt'
+LTE = 'lte'
+STARTSWITH = 'startswith'
+ISTARTSWITH = 'istartswith'
+ENDSWITH = 'endswith'
+IENDSWITH = 'iendswith'
+RANGE = 'range'
+ISNULL = 'isnull'
+REGEX = 'regex'
+IREGEX = 'iregex'
+SEARCH = 'search'
+
+ALL = (EXACT, IEXACT, CONTAINS, ICONTAINS, IN, GT, GTE, LT, LTE, STARTSWITH, ISTARTSWITH, ENDSWITH, IENDSWITH,
+       RANGE, ISNULL, REGEX, IREGEX, SEARCH,)
