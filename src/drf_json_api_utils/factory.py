@@ -1,6 +1,6 @@
 from functools import partial
 from types import FunctionType
-from typing import List, Type
+from typing import List, Type, Tuple
 
 from django.conf.urls import url
 from django.db.models import QuerySet, Model
@@ -58,6 +58,12 @@ class JsonApiViewBuilder:
         self._fields[limit_to_on_retrieve].extend(fields)
         return self
 
+    def add_field(self, name: str, limit_to_on_retrieve: bool = False) -> 'JsonApiViewBuilder':
+        if limit_to_on_retrieve not in self._fields:
+            self._fields[limit_to_on_retrieve] = []
+        self._fields[limit_to_on_retrieve].append(name)
+        return self
+
     def add_filter(self, name: str, field: str = None, lookups: List[str] = None,
                    transform_value: FunctionType = None) -> 'JsonApiViewBuilder':
         if lookups is None:
@@ -79,11 +85,25 @@ class JsonApiViewBuilder:
                      primary_key_name=primary_key_name))
         return self
 
+    def rl(self, field: str, many: bool = False, resource_name: str = None,
+           primary_key_name: str = None,
+           limit_to_on_retrieve: bool = False) -> 'JsonApiViewBuilder':
+        return self.add_relation(field=field, many=many, resource_name=resource_name, primary_key_name=primary_key_name,
+                                 limit_to_on_retrieve=limit_to_on_retrieve)
+
     def add_custom_field(self, name: str, instance_callback: FunctionType = None,
                          limit_to_on_retrieve: bool = False) -> 'JsonApiViewBuilder':
         if limit_to_on_retrieve not in self._custom_fields:
             self._custom_fields[limit_to_on_retrieve] = []
         self._custom_fields[limit_to_on_retrieve].append(CustomField(name=name, callback=instance_callback))
+        return self
+
+    def custom_fields(self, fields: List[Tuple[str, FunctionType]] = None,
+                      limit_to_on_retrieve: bool = False) -> 'JsonApiViewBuilder':
+        if limit_to_on_retrieve not in self._custom_fields:
+            self._custom_fields[limit_to_on_retrieve] = []
+        for name, instance_callback in fields:
+            self._custom_fields[limit_to_on_retrieve].append(CustomField(name=name, callback=instance_callback))
         return self
 
     def set_related_limit(self, limit: int = DEFAULT_RELATED_LIMIT) -> 'JsonApiViewBuilder':
