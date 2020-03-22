@@ -144,7 +144,7 @@ class JsonApiViewBuilder:
             list_method_view_set = type(f'List{self._resource_name}ViewSet', (base_model_view_set,), {
                 'queryset': self._queryset,
                 'serializer_class': method_to_serializer[False],
-                'allowed_methods': self._allowed_methods,
+                'allowed_methods': [json_api_spec_http_methods.HTTP_GET],
                 'permission_classes': self._permission_classes,
                 'authentication_classes': self._authentication_classes,
                 'filterset_class': filter_set,
