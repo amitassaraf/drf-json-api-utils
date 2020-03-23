@@ -137,14 +137,22 @@ class JsonApiViewBuilder:
     def _build(self, url_resource_name: str = '', urls_prefix: str = '') -> Sequence[partial]:
         method_to_serializer = {}
         for limit_to_on_retrieve in [False, True]:
+            fields = self._fields[limit_to_on_retrieve] if limit_to_on_retrieve in self._fields else []
+            if limit_to_on_retrieve is True:
+                fields.extend(self._fields[False])
+            custom_fields = self._custom_fields[
+                limit_to_on_retrieve] if limit_to_on_retrieve in self._custom_fields else []
+            if limit_to_on_retrieve is True:
+                custom_fields.extend(self._custom_fields[False])
+            relations = self._relations[limit_to_on_retrieve] if limit_to_on_retrieve in self._relations else []
+            if limit_to_on_retrieve is True:
+                relations.extend(self._relations[False])
+
             method_to_serializer[limit_to_on_retrieve] = \
                 _construct_serializer('Retrieve' if limit_to_on_retrieve else 'List', self._model, self._resource_name,
-                                      self._fields[
-                                          limit_to_on_retrieve] if limit_to_on_retrieve in self._fields else [],
-                                      self._custom_fields[
-                                          limit_to_on_retrieve] if limit_to_on_retrieve in self._custom_fields else [],
-                                      self._relations[
-                                          limit_to_on_retrieve] if limit_to_on_retrieve in self._relations else [],
+                                      fields,
+                                      custom_fields,
+                                      relations,
                                       self._related_limit,
                                       self._primary_key_name)
             _append_to_namespace(method_to_serializer[limit_to_on_retrieve])
