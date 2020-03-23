@@ -134,7 +134,7 @@ class JsonApiViewBuilder:
 
         return history_urls
 
-    def _build(self, url_resource_name: str = None, urls_prefix: str = None) -> Sequence[partial]:
+    def _build(self, url_resource_name: str = '', urls_prefix: str = '') -> Sequence[partial]:
         method_to_serializer = {}
         for limit_to_on_retrieve in [False, True]:
             method_to_serializer[limit_to_on_retrieve] = \
@@ -218,7 +218,7 @@ class JsonApiViewBuilder:
 
         return urls
 
-    def get_urls(self, url_resource_name: str = None, urls_prefix: str = None) -> Sequence[partial]:
+    def get_urls(self, url_resource_name: str = '', urls_prefix: str = '') -> Sequence[partial]:
         return self._build(url_resource_name=url_resource_name, urls_prefix=urls_prefix)
 
 
