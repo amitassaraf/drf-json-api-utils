@@ -6,7 +6,7 @@ This project currenly only supports and is specific to [django-rest-framework-js
 
 [The source for this project is available here][src].
 
-[] - Add better docs.
+- [ ] Add better docs.
 
 Example Usage
 ----
