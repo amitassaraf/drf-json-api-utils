@@ -48,9 +48,7 @@ def _construct_serializer(serializer_prefix: str, model: Type[Model], resource_n
         'many_init': many_init
     })
 
-    serializer_type_name = f'{serializer_prefix}{resource_name}Serializer'
-
-    return type(serializer_type_name, (serializers.HyperlinkedModelSerializer,), {
+    return type(f'{serializer_prefix}{resource_name}Serializer', (serializers.HyperlinkedModelSerializer,), {
         **{custom_field.name: serializers.SerializerMethodField(read_only=True) for custom_field in
            custom_fields},
         **{f'get_{custom_field.name}': staticmethod(custom_field.callback) for custom_field in custom_fields},
@@ -66,7 +64,7 @@ def _construct_serializer(serializer_prefix: str, model: Type[Model], resource_n
             map(lambda custom_field: custom_field.name, custom_fields))],
                                   'resource_name': resource_name}),
         'included_serializers': {
-            relation.field: f'drf_json_api_utils.namespace.{serializer_type_name}'
+            relation.field: f'drf_json_api_utils.namespace.{f"{serializer_prefix}{relation.resource_name}Serializer"}'
             for relation in relations}
     })
 
