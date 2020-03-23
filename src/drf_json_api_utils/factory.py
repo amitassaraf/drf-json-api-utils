@@ -1,7 +1,9 @@
+from copy import deepcopy
 from functools import partial
 from types import FunctionType
 from typing import Type, Tuple, Sequence
 
+from django.apps import apps
 from django.conf.urls import url
 from django.db.models import QuerySet, Model
 from rest_framework.authentication import BaseAuthentication
@@ -20,6 +22,7 @@ from drf_json_api_utils.constructors import _construct_serializer, _construct_fi
 from drf_json_api_utils.namespace import _append_to_namespace
 from . import json_api_spec_http_methods
 from . import lookups as filter_lookups
+from . import plugins
 from .types import CustomField, Filter, Relation
 
 
@@ -30,7 +33,8 @@ class JsonApiViewBuilder:
                  allowed_methods=json_api_spec_http_methods.HTTP_ALL,
                  permission_classes: Sequence[Type[BasePermission]] = None,
                  authentication_classes: Sequence[Type[BaseAuthentication]] = None,
-                 queryset: QuerySet = None):
+                 queryset: QuerySet = None,
+                 skip_plugins: Sequence[str] = None):
         self.__validate_http_methods(allowed_methods)
         self._model = model
         self._fields = {}
@@ -44,6 +48,7 @@ class JsonApiViewBuilder:
         self._permission_classes = permission_classes or []
         self._authentication_classes = authentication_classes or []
         self._queryset = queryset or self._model.objects
+        self._skip_plugins = skip_plugins or []
 
     @staticmethod
     def __validate_http_methods(limit_to_http_methods: Sequence[str] = json_api_spec_http_methods.HTTP_ALL):
@@ -111,7 +116,25 @@ class JsonApiViewBuilder:
         self._related_limit = limit
         return self
 
-    def _build(self) -> Sequence[partial]:
+    def _get_history_urls(self) -> Sequence[partial]:
+        history_builder = deepcopy(self)
+        history_builder._model = apps.get_model(self._model.objects.model._meta.db_table.split('_')[0],
+                                                f'Historical{self._model.__name__}')
+        history_builder._queryset = self._model.history
+        history_builder._resource_name = f'historical_{self._resource_name}'
+
+        history_urls = history_builder.fields(['history_date', 'history_change_reason', 'history_id', 'history_type']) \
+            .add_filter(name='history_date', lookups=(
+            filter_lookups.EXACT, filter_lookups.IN, filter_lookups.LT, filter_lookups.LTE, filter_lookups.GT,
+            filter_lookups.GTE)) \
+            .add_filter(name='history_id', lookups=(filter_lookups.EXACT, filter_lookups.IN)) \
+            .add_filter(name='history_change_reason', lookups=(filter_lookups.EXACT, filter_lookups.IN)) \
+            .add_filter(name='history_type', lookups=(filter_lookups.EXACT, filter_lookups.IN)) \
+            .get_urls(urls_prefix='history/', url_resource_name=self._resource_name)
+
+        return history_urls
+
+    def _build(self, url_resource_name: str = None, urls_prefix: str = None) -> Sequence[partial]:
         method_to_serializer = {}
         for limit_to_on_retrieve in [False, True]:
             method_to_serializer[limit_to_on_retrieve] = \
@@ -165,22 +188,38 @@ class JsonApiViewBuilder:
                 'lookup_field': pk_name
             })
 
+            if len(urls_prefix) > 0 and urls_prefix[-1] != '/':
+                urls_prefix = f'{urls_prefix}/'
+
+            if len(url_resource_name) == 0:
+                url_resource_name = self._resource_name
+
             urls.extend([
-                url(rf'^{self._resource_name}$', list_method_view_set.as_view({'get': 'list'}),
+                url(rf'^{urls_prefix}{url_resource_name}$', list_method_view_set.as_view({'get': 'list'}),
                     name=f'list-{self._resource_name}'),
-                url(rf'^{self._resource_name}/(?P<{pk_name}>[^/.]+)/$',
+                url(rf'^{urls_prefix}{url_resource_name}/(?P<{pk_name}>[^/.]+)/$',
                     get_method_view_set.as_view({'get': 'retrieve'}),
                     name=f'{self._resource_name}-detail'),
-                url(rf'^{self._resource_name}/(?P<{pk_name}>[^/.]+)/(?P<related_field>\w+)/$',
+                url(rf'^{urls_prefix}{url_resource_name}/(?P<{pk_name}>[^/.]+)/(?P<related_field>\w+)/$',
                     list_method_view_set.as_view({'get': 'retrieve_related'}),
                     name=f'related-{self._resource_name}'),
-                url(rf'^{self._resource_name}/(?P<{pk_name}>[^/.]+)/relationships/(?P<related_field>[^/.]+)$',
+                url(
+                    rf'^{urls_prefix}{url_resource_name}/(?P<{pk_name}>[^/.]+)/relationships/(?P<related_field>[^/.]+)$',
                     view=relationship_view.as_view(), name=f'{self._resource_name}-relationships'),
             ])
+
+        if plugins.DJANGO_SIMPLE_HISTORY not in self._skip_plugins:
+            try:
+                import simple_history
+
+                urls.extend(self._get_history_urls())
+            except:
+                pass
+
         return urls
 
-    def get_urls(self) -> Sequence[partial]:
-        return self._build()
+    def get_urls(self, url_resource_name: str = None, urls_prefix: str = None) -> Sequence[partial]:
+        return self._build(url_resource_name=url_resource_name, urls_prefix=url_prefix)
 
 
 class LimitedJsonApiPageNumberPagination(JsonApiPageNumberPagination):

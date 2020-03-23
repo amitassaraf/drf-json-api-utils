@@ -12,8 +12,8 @@ with open(path.join(here, 'README.md'), encoding='utf-8') as f:
 
 setup(
     name='drf-json-api-utils',
-    version='1.0.5',
-    description='A sample Python project',
+    version='1.0.6',
+    description='Utilities to reduce the boiler-plating of django-rest-framework-json-api',
     long_description=long_description,
     long_description_content_type='text/markdown',
     url='https://github.com/amitassaraf/drf-json-api-utils',
@@ -37,6 +37,7 @@ setup(
     extras_require={
         'dev': ['check-manifest'],
         'test': ['coverage'],
+        'django-simple-history': ['django-simple-history']
     },
     entry_points={
         'console_scripts': [],
