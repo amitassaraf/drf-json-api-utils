@@ -5,5 +5,4 @@ from drf_json_api_utils.factory import JsonApiViewBuilder
 
 
 def test_success():
-    JsonApiViewBuilder(model=None)
     assert True
