@@ -139,14 +139,14 @@ class JsonApiViewBuilder:
         for limit_to_on_retrieve in [False, True]:
             fields = self._fields[limit_to_on_retrieve] if limit_to_on_retrieve in self._fields else []
             if limit_to_on_retrieve is True:
-                fields.extend(self._fields[False])
+                fields.extend(self._fields[False] if False in self._fields else [])
             custom_fields = self._custom_fields[
                 limit_to_on_retrieve] if limit_to_on_retrieve in self._custom_fields else []
             if limit_to_on_retrieve is True:
-                custom_fields.extend(self._custom_fields[False])
+                custom_fields.extend(self._custom_fields[False] if False in self._custom_fields else [])
             relations = self._relations[limit_to_on_retrieve] if limit_to_on_retrieve in self._relations else []
             if limit_to_on_retrieve is True:
-                relations.extend(self._relations[False])
+                relations.extend(self._relations[False] if False in self._relations else [])
 
             method_to_serializer[limit_to_on_retrieve] = \
                 _construct_serializer('Retrieve' if limit_to_on_retrieve else 'List', self._model, self._resource_name,
