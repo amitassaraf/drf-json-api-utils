@@ -94,7 +94,7 @@ def _construct_filter_backend(model: Type[Model], resource_name: str, filters: D
     })
 
     def _get_filterset_kwargs(self, request, queryset, view):
-        result = super(self.__class__, self)._get_filterset_kwargs(request, queryset, view)
+        result = super(self.__class__, self).get_filterset_kwargs(request, queryset, view)
         queryset = result['queryset']
         for field, value in result['data'].items():
             if field in constructed_filters_transform_callbacks:
