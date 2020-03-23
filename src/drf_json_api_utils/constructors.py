@@ -1,4 +1,4 @@
-from typing import List, Type, Dict, Tuple
+from typing import Type, Dict, Tuple, Sequence
 
 from django.db.models import QuerySet, Model
 from django_filters.filterset import BaseFilterSet
@@ -12,8 +12,8 @@ from rest_framework_json_api.relations import ResourceRelatedField
 from .types import CustomField, Relation, Filter
 
 
-def _construct_serializer(serializer_prefix: str, model: Type[Model], resource_name: str, fields: List[str],
-                          custom_fields: List[CustomField], relations: List[Relation], related_limit: int,
+def _construct_serializer(serializer_prefix: str, model: Type[Model], resource_name: str, fields: Sequence[str],
+                          custom_fields: Sequence[CustomField], relations: Sequence[Relation], related_limit: int,
                           primary_key_name: str) -> Type:
     def to_representation(self, iterable):
         if isinstance(iterable, QuerySet):

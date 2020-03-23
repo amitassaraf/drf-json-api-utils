@@ -1,6 +1,6 @@
 from functools import partial
 from types import FunctionType
-from typing import List, Type, Tuple
+from typing import Type, Tuple, Sequence
 
 from django.conf.urls import url
 from django.db.models import QuerySet, Model
@@ -28,8 +28,8 @@ class JsonApiViewBuilder:
 
     def __init__(self, model: Type[Model], primary_key_name: str = None, resource_name: str = None,
                  allowed_methods=json_api_spec_http_methods.HTTP_ALL,
-                 permission_classes: List[Type[BasePermission]] = None,
-                 authentication_classes: List[Type[BaseAuthentication]] = None,
+                 permission_classes: Sequence[Type[BasePermission]] = None,
+                 authentication_classes: Sequence[Type[BaseAuthentication]] = None,
                  queryset: QuerySet = None):
         self.__validate_http_methods(allowed_methods)
         self._model = model
@@ -46,13 +46,13 @@ class JsonApiViewBuilder:
         self._queryset = queryset or self._model.objects
 
     @staticmethod
-    def __validate_http_methods(limit_to_http_methods: List[str] = json_api_spec_http_methods.HTTP_ALL):
+    def __validate_http_methods(limit_to_http_methods: Sequence[str] = json_api_spec_http_methods.HTTP_ALL):
         if any(map(lambda method: method not in json_api_spec_http_methods.HTTP_ALL, limit_to_http_methods)):
             raise Exception(
                 f'Cannot limit fields to HTTP Method of types: '
                 f'{list(filter(lambda method: method not in json_api_spec_http_methods.HTTP_ALL, limit_to_http_methods))}')
 
-    def fields(self, fields: List[str],
+    def fields(self, fields: Sequence[str],
                limit_to_on_retrieve: bool = False) -> 'JsonApiViewBuilder':
         if limit_to_on_retrieve not in self._fields:
             self._fields[limit_to_on_retrieve] = []
@@ -65,7 +65,7 @@ class JsonApiViewBuilder:
         self._fields[limit_to_on_retrieve].append(name)
         return self
 
-    def add_filter(self, name: str, field: str = None, lookups: List[str] = None,
+    def add_filter(self, name: str, field: str = None, lookups: Sequence[str] = None,
                    transform_value: FunctionType = None) -> 'JsonApiViewBuilder':
         if lookups is None:
             lookups = (filter_lookups.EXACT,)
@@ -99,7 +99,7 @@ class JsonApiViewBuilder:
         self._custom_fields[limit_to_on_retrieve].append(CustomField(name=name, callback=instance_callback))
         return self
 
-    def custom_fields(self, fields: List[Tuple[str, FunctionType]] = None,
+    def custom_fields(self, fields: Sequence[Tuple[str, FunctionType]] = None,
                       limit_to_on_retrieve: bool = False) -> 'JsonApiViewBuilder':
         if limit_to_on_retrieve not in self._custom_fields:
             self._custom_fields[limit_to_on_retrieve] = []
@@ -111,7 +111,7 @@ class JsonApiViewBuilder:
         self._related_limit = limit
         return self
 
-    def _build(self) -> List[partial]:
+    def _build(self) -> Sequence[partial]:
         method_to_serializer = {}
         for limit_to_on_retrieve in [False, True]:
             method_to_serializer[limit_to_on_retrieve] = \
@@ -176,7 +176,7 @@ class JsonApiViewBuilder:
             ])
         return urls
 
-    def get_urls(self) -> List[partial]:
+    def get_urls(self) -> Sequence[partial]:
         return self._build()
 
 
