@@ -219,7 +219,7 @@ class JsonApiViewBuilder:
         return urls
 
     def get_urls(self, url_resource_name: str = None, urls_prefix: str = None) -> Sequence[partial]:
-        return self._build(url_resource_name=url_resource_name, urls_prefix=url_prefix)
+        return self._build(url_resource_name=url_resource_name, urls_prefix=urls_prefix)
 
 
 class LimitedJsonApiPageNumberPagination(JsonApiPageNumberPagination):
