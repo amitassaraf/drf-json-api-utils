@@ -27,8 +27,9 @@ class JsonApiViewBuilder:
     DEFAULT_RELATED_LIMIT = 100
 
     def __init__(self, model: Type[Model], primary_key_name: str = None, resource_name: str = None,
-                 allowed_methods=json_api_spec_http_methods.HTTP_ALL, permission_classes: List[BasePermission] = None,
-                 authentication_classes: List[BaseAuthentication] = None,
+                 allowed_methods=json_api_spec_http_methods.HTTP_ALL,
+                 permission_classes: List[Type[BasePermission]] = None,
+                 authentication_classes: List[Type[BaseAuthentication]] = None,
                  queryset: QuerySet = None):
         self.__validate_http_methods(allowed_methods)
         self._model = model

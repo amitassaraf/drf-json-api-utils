@@ -1,8 +1,8 @@
 __title__ = 'DRF Json Api Utils'
-__version__ = '1.0.0'
+__version__ = '1.0.1'
 __author__ = 'Amit Assaraf'
 __license__ = 'MIT License'
-__copyright__ = 'Copyright 2011-2020 Amit Assaraf'
+__copyright__ = 'Copyright 2020 Amit Assaraf'
 
 # Version synonym
 VERSION = __version__
@@ -12,3 +12,5 @@ HTTP_HEADER_ENCODING = 'iso-8859-1'
 
 # Default datetime input and output formats
 ISO_8601 = 'iso-8601'
+
+from .factory import *
