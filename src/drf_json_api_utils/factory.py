@@ -115,7 +115,7 @@ class JsonApiViewBuilder:
         method_to_serializer = {}
         for limit_to_on_retrieve in [False, True]:
             method_to_serializer[limit_to_on_retrieve] = \
-                _construct_serializer(str(limit_to_on_retrieve), self._model, self._resource_name,
+                _construct_serializer('Retrieve' if limit_to_on_retrieve else 'List', self._model, self._resource_name,
                                       self._fields[
                                           limit_to_on_retrieve] if limit_to_on_retrieve in self._fields else [],
                                       self._custom_fields[
