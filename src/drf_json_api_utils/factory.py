@@ -99,19 +99,21 @@ class JsonApiViewBuilder:
 
     def add_relation(self, field: str, many: bool = False, resource_name: str = None,
                      primary_key_name: str = None,
-                     limit_to_on_retrieve: bool = False) -> 'JsonApiViewBuilder':
+                     limit_to_on_retrieve: bool = False,
+                     required: bool = False) -> 'JsonApiViewBuilder':
         if limit_to_on_retrieve not in self._relations:
             self._relations[limit_to_on_retrieve] = []
         self._relations[limit_to_on_retrieve].append(
             Relation(field=field, resource_name=resource_name or field, many=many,
-                     primary_key_name=primary_key_name))
+                     primary_key_name=primary_key_name, required=required))
         return self
 
     def rl(self, field: str, many: bool = False, resource_name: str = None,
            primary_key_name: str = None,
-           limit_to_on_retrieve: bool = False) -> 'JsonApiViewBuilder':
+           limit_to_on_retrieve: bool = False,
+           required: bool = False) -> 'JsonApiViewBuilder':
         return self.add_relation(field=field, many=many, resource_name=resource_name, primary_key_name=primary_key_name,
-                                 limit_to_on_retrieve=limit_to_on_retrieve)
+                                 limit_to_on_retrieve=limit_to_on_retrieve, required=required)
 
     def add_custom_field(self, name: str, instance_callback: FunctionType = None,
                          limit_to_on_retrieve: bool = False) -> 'JsonApiViewBuilder':
@@ -257,23 +259,25 @@ class JsonApiViewBuilder:
             list_method_view_set = type(f'List{self._resource_name}ViewSet', (base_model_view_set,), {
                 'get_queryset': get_queryset,
                 'serializer_class': method_to_serializer[False],
-                'allowed_methods': list(filter(lambda method: method in [json_api_spec_http_methods.HTTP_GET,
-                                                                         json_api_spec_http_methods.HTTP_POST],
-                                               self._allowed_methods)),
+                'http_method_names': list(map(lambda method: method.lower(),
+                                              filter(lambda method: method in [json_api_spec_http_methods.HTTP_GET,
+                                                                               json_api_spec_http_methods.HTTP_POST],
+                                                     self._allowed_methods))) + ['head', 'options'],
                 'permission_classes': self._permission_classes,
                 'authentication_classes': self._authentication_classes,
                 'filterset_class': filter_set,
                 'lookup_field': pk_name,
-                'perform_create': perform_create,
+                'perform_create': perform_create
             })
 
             get_method_view_set = type(f'Get{self._resource_name}ViewSet', (base_model_view_set,), {
                 'get_queryset': get_queryset,
                 'serializer_class': method_to_serializer[True],
-                'allowed_methods': list(filter(lambda method: method in [json_api_spec_http_methods.HTTP_GET,
-                                                                         json_api_spec_http_methods.HTTP_PATCH,
-                                                                         json_api_spec_http_methods.HTTP_DELETE],
-                                               self._allowed_methods)),
+                'http_method_names': list(map(lambda method: method.lower(),
+                                              filter(lambda method: method in [json_api_spec_http_methods.HTTP_GET,
+                                                                               json_api_spec_http_methods.HTTP_PATCH,
+                                                                               json_api_spec_http_methods.HTTP_DELETE],
+                                                     self._allowed_methods))) + ['head', 'options'],
                 'permission_classes': self._permission_classes,
                 'authentication_classes': self._authentication_classes,
                 'filterset_class': filter_set,
@@ -289,10 +293,11 @@ class JsonApiViewBuilder:
                 url_resource_name = self._resource_name
 
             urls.extend([
-                url(rf'^{urls_prefix}{url_resource_name}$', list_method_view_set.as_view({'get': 'list'}),
+                url(rf'^{urls_prefix}{url_resource_name}$',
+                    list_method_view_set.as_view({'get': 'list', 'post': 'create'}),
                     name=f'list-{self._resource_name}'),
                 url(rf'^{urls_prefix}{url_resource_name}/(?P<{pk_name}>[^/.]+)/$',
-                    get_method_view_set.as_view({'get': 'retrieve'}),
+                    get_method_view_set.as_view({'get': 'retrieve', 'patch': 'update', 'delete': 'delete'}),
                     name=f'{self._resource_name}-detail'),
                 url(rf'^{urls_prefix}{url_resource_name}/(?P<{pk_name}>[^/.]+)/(?P<related_field>\w+)/$',
                     list_method_view_set.as_view({'get': 'retrieve_related'}),

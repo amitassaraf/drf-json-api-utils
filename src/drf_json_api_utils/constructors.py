@@ -80,8 +80,11 @@ def _construct_serializer(serializer_prefix: str, model: Type[Model], resource_n
            custom_fields},
         **{f'get_{custom_field.name}': staticmethod(custom_field.callback) for custom_field in custom_fields},
         **{relation.field: generate_relation_field(relation)(
+            queryset=getattr(model, relation.field).get_queryset()
+            if hasattr(getattr(model, relation.field), 'get_queryset')
+            else getattr(model, relation.field).field.related_model.objects.all(),
             many=relation.many,
-            read_only=True,
+            required=getattr(relation, 'required', False),
             related_link_view_name=f'{relation.resource_name}-detail',
             related_link_lookup_field=primary_key_name,
             related_link_url_kwarg=relation.primary_key_name or 'id',
