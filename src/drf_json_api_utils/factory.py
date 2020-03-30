@@ -47,7 +47,10 @@ class JsonApiViewBuilder:
         self._related_limit = self.DEFAULT_RELATED_LIMIT
         self._permission_classes = permission_classes or []
         self._authentication_classes = authentication_classes or []
-        self._queryset = queryset or self._model.objects
+        if queryset is None:
+            self._queryset = self._model.objects
+        else:
+            self._queryset = queryset
         self._skip_plugins = skip_plugins or []
 
     @staticmethod
@@ -118,6 +121,7 @@ class JsonApiViewBuilder:
 
     def _get_history_urls(self) -> Sequence[partial]:
         history_builder = deepcopy(self)
+        history_builder._skip_plugins = [plugins.DJANGO_SIMPLE_HISTORY]
         history_builder._model = apps.get_model(self._model.objects.model._meta.db_table.split('_')[0],
                                                 f'Historical{self._model.__name__}')
         history_builder._queryset = self._model.history
