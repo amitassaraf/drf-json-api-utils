@@ -1,3 +1,4 @@
+import logging
 from copy import deepcopy
 from functools import partial
 from types import FunctionType
@@ -7,23 +8,24 @@ from django.apps import apps
 from django.conf.urls import url
 from django.db.models import QuerySet, Model
 from rest_framework.authentication import BaseAuthentication
-from rest_framework.filters import SearchFilter
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import BasePermission
 from rest_framework.renderers import BrowsableAPIRenderer
 from rest_framework_json_api.filters import QueryParameterValidationFilter, OrderingFilter
 from rest_framework_json_api.metadata import JSONAPIMetadata
-from rest_framework_json_api.pagination import JsonApiPageNumberPagination
 from rest_framework_json_api.parsers import JSONParser
 from rest_framework_json_api.renderers import JSONRenderer
 from rest_framework_json_api.views import RelationshipView, ModelViewSet
 
-from drf_json_api_utils.constructors import _construct_serializer, _construct_filter_backend
-from drf_json_api_utils.namespace import _append_to_namespace
 from . import json_api_spec_http_methods
 from . import lookups as filter_lookups
 from . import plugins
+from .common import LimitedJsonApiPageNumberPagination, JsonApiSearchFilter
+from .constructors import _construct_serializer, _construct_filter_backend
+from .namespace import _append_to_namespace
 from .types import CustomField, Filter, Relation
+
+LOGGER = logging.getLogger(__name__)
 
 
 class JsonApiViewBuilder:
@@ -47,6 +49,12 @@ class JsonApiViewBuilder:
         self._related_limit = self.DEFAULT_RELATED_LIMIT
         self._permission_classes = permission_classes or []
         self._authentication_classes = authentication_classes or []
+        self._pre_create_callback = None
+        self._post_create_callback = None
+        self._pre_update_callback = None
+        self._post_update_callback = None
+        self._pre_delete_callback = None
+        self._post_delete_callback = None
         if queryset is None:
             self._queryset = self._model.objects
         else:
@@ -59,6 +67,12 @@ class JsonApiViewBuilder:
             raise Exception(
                 f'Cannot limit fields to HTTP Method of types: '
                 f'{list(filter(lambda method: method not in json_api_spec_http_methods.HTTP_ALL, limit_to_http_methods))}')
+
+    def __warn_if_method_not_available(self, method: str):
+        if method not in self._allowed_methods:
+            LOGGER.warning(
+                f'You\'ve set a lifecycle callback for resource {self._resource_name}, '
+                f'which doesn\'t allow it\'s respective HTTP method through `allowed_methods`.')
 
     def fields(self, fields: Sequence[str],
                limit_to_on_retrieve: bool = False) -> 'JsonApiViewBuilder':
@@ -119,6 +133,36 @@ class JsonApiViewBuilder:
         self._related_limit = limit
         return self
 
+    def pre_create(self, pre_create_callback: FunctionType = None) -> 'JsonApiViewBuilder':
+        self._pre_create_callback = pre_create_callback
+        self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_POST)
+        return self
+
+    def post_create(self, pre_create_callback: FunctionType = None) -> 'JsonApiViewBuilder':
+        self._post_create_callback = pre_create_callback
+        self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_POST)
+        return self
+
+    def pre_update(self, pre_update_callback: FunctionType = None) -> 'JsonApiViewBuilder':
+        self._pre_update_callback = pre_update_callback
+        self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_PATCH)
+        return self
+
+    def post_update(self, pre_update_callback: FunctionType = None) -> 'JsonApiViewBuilder':
+        self._post_update_callback = pre_update_callback
+        self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_PATCH)
+        return self
+
+    def pre_delete(self, pre_delete_callback: FunctionType = None) -> 'JsonApiViewBuilder':
+        self._pre_delete_callback = pre_delete_callback
+        self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_DELETE)
+        return self
+
+    def post_delete(self, pre_delete_callback: FunctionType = None) -> 'JsonApiViewBuilder':
+        self._post_delete_callback = pre_delete_callback
+        self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_DELETE)
+        return self
+
     def _get_history_urls(self) -> Sequence[partial]:
         history_builder = deepcopy(self)
         history_builder._skip_plugins = [plugins.DJANGO_SIMPLE_HISTORY]
@@ -158,10 +202,28 @@ class JsonApiViewBuilder:
                                       custom_fields,
                                       relations,
                                       self._related_limit,
-                                      self._primary_key_name)
+                                      self._primary_key_name,
+                                      self._pre_update_callback if limit_to_on_retrieve else self._pre_create_callback)
             _append_to_namespace(method_to_serializer[limit_to_on_retrieve])
 
         filter_set, filter_backend = _construct_filter_backend(self._model, self._resource_name, self._filters)
+
+        def perform_create(view, serializer):
+            instance = serializer.save()
+            if self._post_update_callback is not None:
+                self._post_update_callback(instance)
+
+        def perform_destroy(view, instance):
+            if self._pre_delete_callback is not None:
+                self._pre_delete_callback(instance)
+            instance.delete()
+            if self._post_delete_callback is not None:
+                self._post_delete_callback(instance)
+
+        def perform_update(view, serializer):
+            instance = serializer.save()
+            if self._post_update_callback is not None:
+                self._post_update_callback(instance)
 
         base_model_view_set = type(f'{self._resource_name}JSONApiModelViewSet', (ModelViewSet,), {
             'renderer_classes': (JSONRenderer, BrowsableAPIRenderer),
@@ -170,7 +232,7 @@ class JsonApiViewBuilder:
             'pagination_class': LimitedJsonApiPageNumberPagination,
             'filter_backends': (
                 QueryParameterValidationFilter, OrderingFilter, filter_backend, JsonApiSearchFilter),
-            'resource_name': self._resource_name
+            'resource_name': self._resource_name,
         })
 
         urls = []
@@ -183,21 +245,29 @@ class JsonApiViewBuilder:
             list_method_view_set = type(f'List{self._resource_name}ViewSet', (base_model_view_set,), {
                 'queryset': self._queryset,
                 'serializer_class': method_to_serializer[False],
-                'allowed_methods': [json_api_spec_http_methods.HTTP_GET],
+                'allowed_methods': list(filter(lambda method: method in [json_api_spec_http_methods.HTTP_GET,
+                                                                         json_api_spec_http_methods.HTTP_POST],
+                                               self._allowed_methods)),
                 'permission_classes': self._permission_classes,
                 'authentication_classes': self._authentication_classes,
                 'filterset_class': filter_set,
-                'lookup_field': pk_name
+                'lookup_field': pk_name,
+                'perform_create': perform_create,
             })
 
             get_method_view_set = type(f'Get{self._resource_name}ViewSet', (base_model_view_set,), {
                 'queryset': self._queryset,
                 'serializer_class': method_to_serializer[True],
-                'allowed_methods': self._allowed_methods,
+                'allowed_methods': list(filter(lambda method: method in [json_api_spec_http_methods.HTTP_GET,
+                                                                         json_api_spec_http_methods.HTTP_PATCH,
+                                                                         json_api_spec_http_methods.HTTP_DELETE],
+                                               self._allowed_methods)),
                 'permission_classes': self._permission_classes,
                 'authentication_classes': self._authentication_classes,
                 'filterset_class': filter_set,
-                'lookup_field': pk_name
+                'lookup_field': pk_name,
+                'perform_update': perform_update,
+                'perform_destroy': perform_destroy,
             })
 
             if len(urls_prefix) > 0 and urls_prefix[-1] != '/':
@@ -232,11 +302,3 @@ class JsonApiViewBuilder:
 
     def get_urls(self, url_resource_name: str = '', urls_prefix: str = '') -> Sequence[partial]:
         return self._build(url_resource_name=url_resource_name, urls_prefix=urls_prefix)
-
-
-class LimitedJsonApiPageNumberPagination(JsonApiPageNumberPagination):
-    page_size = 50
-
-
-class JsonApiSearchFilter(SearchFilter):
-    search_param = 'filter[search]'

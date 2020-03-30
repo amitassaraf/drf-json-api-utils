@@ -1,3 +1,4 @@
+from types import FunctionType
 from typing import Type, Dict, Tuple, Sequence
 
 from django.db.models import QuerySet, Model
@@ -14,7 +15,7 @@ from .types import CustomField, Relation, Filter
 
 def _construct_serializer(serializer_prefix: str, model: Type[Model], resource_name: str, fields: Sequence[str],
                           custom_fields: Sequence[CustomField], relations: Sequence[Relation], related_limit: int,
-                          primary_key_name: str) -> Type:
+                          primary_key_name: str, on_validate: FunctionType = None) -> Type:
     def to_representation(self, iterable):
         if isinstance(iterable, QuerySet):
             real_count = iterable.count()
@@ -48,6 +49,11 @@ def _construct_serializer(serializer_prefix: str, model: Type[Model], resource_n
         'many_init': many_init
     })
 
+    def validate_data(self, data):
+        if on_validate is not None:
+            return on_validate(self.context['request'], self, data)
+        return data
+
     return type(f'{serializer_prefix}{resource_name}Serializer', (serializers.HyperlinkedModelSerializer,), {
         **{custom_field.name: serializers.SerializerMethodField(read_only=True) for custom_field in
            custom_fields},
@@ -60,6 +66,7 @@ def _construct_serializer(serializer_prefix: str, model: Type[Model], resource_n
             related_link_url_kwarg=relation.primary_key_name or 'id',
             self_link_view_name=f'{resource_name}-relationships'
         ) for relation in relations},
+        'validate': validate_data,
         'Meta': type('Meta', (), {'model': model, 'fields': [*fields, *list(
             map(lambda custom_field: custom_field.name, custom_fields))],
                                   'resource_name': resource_name}),
