@@ -267,7 +267,8 @@ class JsonApiViewBuilder:
                 'authentication_classes': self._authentication_classes,
                 'filterset_class': filter_set,
                 'lookup_field': pk_name,
-                'perform_create': perform_create
+                'perform_create': perform_create,
+                'name': f'list {self._resource_name}'
             })
 
             get_method_view_set = type(f'Get{self._resource_name}ViewSet', (base_model_view_set,), {
@@ -294,17 +295,19 @@ class JsonApiViewBuilder:
 
             urls.extend([
                 url(rf'^{urls_prefix}{url_resource_name}$',
-                    list_method_view_set.as_view({'get': 'list', 'post': 'create'}),
+                    list_method_view_set.as_view({'get': 'list', 'post': 'create'}, name=f'list_{self._resource_name}'),
                     name=f'list-{self._resource_name}'),
                 url(rf'^{urls_prefix}{url_resource_name}/(?P<{pk_name}>[^/.]+)/$',
-                    get_method_view_set.as_view({'get': 'retrieve', 'patch': 'update', 'delete': 'delete'}),
+                    get_method_view_set.as_view({'get': 'retrieve', 'patch': 'update', 'delete': 'destroy'},
+                                                name=f'get_{self._resource_name}'),
                     name=f'{self._resource_name}-detail'),
                 url(rf'^{urls_prefix}{url_resource_name}/(?P<{pk_name}>[^/.]+)/(?P<related_field>\w+)/$',
-                    list_method_view_set.as_view({'get': 'retrieve_related'}),
+                    list_method_view_set.as_view({'get': 'retrieve_related'}, name=f'related_{self._resource_name}'),
                     name=f'related-{self._resource_name}'),
                 url(
                     rf'^{urls_prefix}{url_resource_name}/(?P<{pk_name}>[^/.]+)/relationships/(?P<related_field>[^/.]+)$',
-                    view=relationship_view.as_view(), name=f'{self._resource_name}-relationships'),
+                    view=relationship_view.as_view(),
+                    name=f'{self._resource_name}-relationships'),
             ])
 
         if plugins.DJANGO_SIMPLE_HISTORY not in self._skip_plugins:
