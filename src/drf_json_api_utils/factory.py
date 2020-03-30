@@ -1,4 +1,3 @@
-import logging
 from copy import deepcopy
 from functools import partial
 from types import FunctionType
@@ -8,7 +7,6 @@ from django.apps import apps
 from django.conf.urls import url
 from django.db.models import QuerySet, Model
 from rest_framework.authentication import BaseAuthentication
-from rest_framework.filters import BaseFilterBackend
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import BasePermission
 from rest_framework.renderers import BrowsableAPIRenderer
@@ -21,12 +19,10 @@ from rest_framework_json_api.views import RelationshipView, ModelViewSet
 from . import json_api_spec_http_methods
 from . import lookups as filter_lookups
 from . import plugins
-from .common import LimitedJsonApiPageNumberPagination, JsonApiSearchFilter
+from .common import LimitedJsonApiPageNumberPagination, JsonApiSearchFilter, LOGGER
 from .constructors import _construct_serializer, _construct_filter_backend
-from .namespace import _append_to_namespace
+from .namespace import _append_to_namespace, _RESOURCE_NAME_TO_SPICE
 from .types import CustomField, Filter, Relation
-
-LOGGER = logging.getLogger(__name__)
 
 
 class JsonApiViewBuilder:
@@ -37,7 +33,7 @@ class JsonApiViewBuilder:
                  permission_classes: Sequence[Type[BasePermission]] = None,
                  authentication_classes: Sequence[Type[BaseAuthentication]] = None,
                  queryset: QuerySet = None,
-                 spice_queryset: FunctionType = None,
+                 permitted_objects: FunctionType = None,
                  skip_plugins: Sequence[str] = None):
         self.__validate_http_methods(allowed_methods)
         self._model = model
@@ -61,7 +57,7 @@ class JsonApiViewBuilder:
             self._queryset = self._model.objects
         else:
             self._queryset = queryset
-        self._spice_queryset = spice_queryset
+        self._spice_queryset = permitted_objects
         self._skip_plugins = skip_plugins or []
 
     @staticmethod
@@ -228,35 +224,38 @@ class JsonApiViewBuilder:
             if self._post_update_callback is not None:
                 self._post_update_callback(instance)
 
-        def __filter_queryset(backend, request, queryset, view):
-            if self._spice_queryset is not None:
-                return self._spice_queryset(request, queryset)
-            return queryset
-
-        spice_queryset_filter = type(f'{self._resource_name}SpiceFilterBackend', (BaseFilterBackend,), {
-            'filter_queryset': __filter_queryset
-        })
-
         base_model_view_set = type(f'{self._resource_name}JSONApiModelViewSet', (ModelViewSet,), {
             'renderer_classes': (JSONRenderer, BrowsableAPIRenderer),
             'parser_classes': (JSONParser, FormParser, MultiPartParser),
             'metadata_class': JSONAPIMetadata,
             'pagination_class': LimitedJsonApiPageNumberPagination,
             'filter_backends': (
-                QueryParameterValidationFilter, OrderingFilter, spice_queryset_filter, filter_backend,
-                JsonApiSearchFilter),
+                QueryParameterValidationFilter, OrderingFilter, filter_backend, JsonApiSearchFilter),
             'resource_name': self._resource_name,
         })
+
+        def get_queryset(view):
+            if self._queryset is None:
+                queryset = super(view.__class__, view).get_queryset()
+            else:
+                queryset = self._queryset
+            request = view.request
+            if self._spice_queryset is not None:
+                return self._spice_queryset(request, queryset)
+            return queryset
+
+        if self._spice_queryset is not None:
+            _RESOURCE_NAME_TO_SPICE[self._resource_name] = self._spice_queryset
 
         urls = []
         for pk_name in ['pk', self._primary_key_name]:
             relationship_view = type(f'{self._resource_name}RelationshipsView', (RelationshipView,), {
-                'queryset': self._queryset,
+                'get_queryset': get_queryset,
                 'lookup_field': pk_name
             })
 
             list_method_view_set = type(f'List{self._resource_name}ViewSet', (base_model_view_set,), {
-                'queryset': self._queryset,
+                'get_queryset': get_queryset,
                 'serializer_class': method_to_serializer[False],
                 'allowed_methods': list(filter(lambda method: method in [json_api_spec_http_methods.HTTP_GET,
                                                                          json_api_spec_http_methods.HTTP_POST],
@@ -269,7 +268,7 @@ class JsonApiViewBuilder:
             })
 
             get_method_view_set = type(f'Get{self._resource_name}ViewSet', (base_model_view_set,), {
-                'queryset': self._queryset,
+                'get_queryset': get_queryset,
                 'serializer_class': method_to_serializer[True],
                 'allowed_methods': list(filter(lambda method: method in [json_api_spec_http_methods.HTTP_GET,
                                                                          json_api_spec_http_methods.HTTP_PATCH,

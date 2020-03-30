@@ -5,11 +5,13 @@ from django.db.models import QuerySet, Model
 from django_filters.filterset import BaseFilterSet
 from django_filters.rest_framework import FilterSet
 from django_filters.utils import get_model_field
+from rest_framework.fields import get_attribute
 from rest_framework.relations import ManyRelatedField, MANY_RELATION_KWARGS
 from rest_framework_json_api import serializers
 from rest_framework_json_api.django_filters import DjangoFilterBackend
 from rest_framework_json_api.relations import ResourceRelatedField
 
+from .namespace import _RESOURCE_NAME_TO_SPICE
 from .types import CustomField, Relation, Filter
 
 
@@ -34,20 +36,39 @@ def _construct_serializer(serializer_prefix: str, model: Type[Model], resource_n
 
         return LiarList(data)
 
-    many_related = type(f'{resource_name}ManyRelatedField', (ManyRelatedField,), {
-        'to_representation': to_representation
-    })
+    def generate_relation_field(relation):
+        def filter_relationship(self, instance, relationship):
+            if relation.resource_name in _RESOURCE_NAME_TO_SPICE:
+                return _RESOURCE_NAME_TO_SPICE[relation.resource_name](self.context['request'], relationship)
+            return relationship
 
-    def many_init(*args, **kwargs):
-        list_kwargs = {'child_relation': resource_related_field(*args, **kwargs)}
-        for key in kwargs:
-            if key in MANY_RELATION_KWARGS:
-                list_kwargs[key] = kwargs[key]
-        return many_related(**list_kwargs)
+        def get_attribute_override(self, instance):
+            # Override the default implementation of get_attribute
+            # Can't have any relationships if not created
+            if hasattr(instance, 'pk') and instance.pk is None:
+                return []
 
-    resource_related_field = type(f'{resource_name}ManyRelatedField', (ResourceRelatedField,), {
-        'many_init': many_init
-    })
+            relationship = get_attribute(instance, self.source_attrs)
+            queryset = filter_relationship(self, instance, relationship)
+            return queryset.all() if (hasattr(queryset, 'all')) else queryset
+
+        many_related = type(f'{resource_name}ManyRelatedField', (ManyRelatedField,), {
+            'to_representation': to_representation,
+            'get_attribute': get_attribute_override
+        })
+
+        def many_init(*args, **kwargs):
+            list_kwargs = {'child_relation': resource_related_field(*args, **kwargs)}
+            for key in kwargs:
+                if key in MANY_RELATION_KWARGS:
+                    list_kwargs[key] = kwargs[key]
+            return many_related(**list_kwargs)
+
+        resource_related_field = type(f'{resource_name}ManyRelatedField', (ResourceRelatedField,), {
+            'many_init': many_init
+        })
+
+        return resource_related_field
 
     def validate_data(self, data):
         if on_validate is not None:
@@ -58,7 +79,7 @@ def _construct_serializer(serializer_prefix: str, model: Type[Model], resource_n
         **{custom_field.name: serializers.SerializerMethodField(read_only=True) for custom_field in
            custom_fields},
         **{f'get_{custom_field.name}': staticmethod(custom_field.callback) for custom_field in custom_fields},
-        **{relation.field: resource_related_field(
+        **{relation.field: generate_relation_field(relation)(
             many=relation.many,
             read_only=True,
             related_link_view_name=f'{relation.resource_name}-detail',
