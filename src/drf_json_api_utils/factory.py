@@ -8,6 +8,7 @@ from django.apps import apps
 from django.conf.urls import url
 from django.db.models import QuerySet, Model
 from rest_framework.authentication import BaseAuthentication
+from rest_framework.filters import BaseFilterBackend
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import BasePermission
 from rest_framework.renderers import BrowsableAPIRenderer
@@ -36,6 +37,7 @@ class JsonApiViewBuilder:
                  permission_classes: Sequence[Type[BasePermission]] = None,
                  authentication_classes: Sequence[Type[BaseAuthentication]] = None,
                  queryset: QuerySet = None,
+                 spice_queryset: FunctionType = None,
                  skip_plugins: Sequence[str] = None):
         self.__validate_http_methods(allowed_methods)
         self._model = model
@@ -59,6 +61,7 @@ class JsonApiViewBuilder:
             self._queryset = self._model.objects
         else:
             self._queryset = queryset
+        self._spice_queryset = spice_queryset
         self._skip_plugins = skip_plugins or []
 
     @staticmethod
@@ -225,13 +228,23 @@ class JsonApiViewBuilder:
             if self._post_update_callback is not None:
                 self._post_update_callback(instance)
 
+        def __filter_queryset(backend, request, queryset, view):
+            if self._spice_queryset is not None:
+                return self._spice_queryset(request, queryset)
+            return queryset
+
+        spice_queryset_filter = type(f'{self._resource_name}SpiceFilterBackend', (BaseFilterBackend,), {
+            'filter_queryset': __filter_queryset
+        })
+
         base_model_view_set = type(f'{self._resource_name}JSONApiModelViewSet', (ModelViewSet,), {
             'renderer_classes': (JSONRenderer, BrowsableAPIRenderer),
             'parser_classes': (JSONParser, FormParser, MultiPartParser),
             'metadata_class': JSONAPIMetadata,
             'pagination_class': LimitedJsonApiPageNumberPagination,
             'filter_backends': (
-                QueryParameterValidationFilter, OrderingFilter, filter_backend, JsonApiSearchFilter),
+                QueryParameterValidationFilter, OrderingFilter, spice_queryset_filter, filter_backend,
+                JsonApiSearchFilter),
             'resource_name': self._resource_name,
         })
 
