@@ -95,7 +95,6 @@ def _construct_serializer(serializer_prefix: str, model: Type[Model], resource_n
         **{relation.field: GenericRelatedField(
             {
                 related_model: generate_relation_field(relation)(
-                    queryset=related_model.objects.all(),
                     many=relation.many,
                     read_only=True,
                     required=getattr(relation, 'required', False),
