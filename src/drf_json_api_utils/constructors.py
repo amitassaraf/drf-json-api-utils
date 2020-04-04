@@ -97,6 +97,7 @@ def _construct_serializer(serializer_prefix: str, model: Type[Model], resource_n
                 related_model: generate_relation_field(relation)(
                     queryset=related_model.objects.all(),
                     many=relation.many,
+                    read_only=True,
                     required=getattr(relation, 'required', False),
                     related_link_view_name=f'{relation_resource_name}-detail',
                     related_link_lookup_field=primary_key_name,
