@@ -5,6 +5,7 @@ from django.db.models import QuerySet, Model
 from django_filters.filterset import BaseFilterSet
 from django_filters.rest_framework import FilterSet
 from django_filters.utils import get_model_field
+from generic_relations.relations import GenericRelatedField
 from rest_framework.fields import get_attribute
 from rest_framework.relations import ManyRelatedField, MANY_RELATION_KWARGS
 from rest_framework_json_api import serializers
@@ -12,11 +13,12 @@ from rest_framework_json_api.django_filters import DjangoFilterBackend
 from rest_framework_json_api.relations import ResourceRelatedField
 
 from .namespace import _RESOURCE_NAME_TO_SPICE
-from .types import CustomField, Relation, Filter
+from .types import CustomField, Relation, Filter, GenericRelation
 
 
 def _construct_serializer(serializer_prefix: str, model: Type[Model], resource_name: str, fields: Sequence[str],
-                          custom_fields: Sequence[CustomField], relations: Sequence[Relation], related_limit: int,
+                          custom_fields: Sequence[CustomField], relations: Sequence[Relation],
+                          generic_relations: Sequence[GenericRelation], related_limit: int,
                           primary_key_name: str, on_validate: FunctionType = None) -> Type:
     def to_representation(self, iterable):
         if isinstance(iterable, QuerySet):
@@ -90,6 +92,19 @@ def _construct_serializer(serializer_prefix: str, model: Type[Model], resource_n
             related_link_url_kwarg=relation.primary_key_name or 'id',
             self_link_view_name=f'{resource_name}-relationships'
         ) for relation in relations},
+        **{relation.field: GenericRelatedField(
+            {
+                related_model: generate_relation_field(relation)(
+                    queryset=related_model.objects.all(),
+                    many=relation.many,
+                    required=getattr(relation, 'required', False),
+                    related_link_view_name=f'{relation_resource_name}-detail',
+                    related_link_lookup_field=primary_key_name,
+                    related_link_url_kwarg='id',
+                    self_link_view_name=f'{resource_name}-relationships'
+                )
+                for related_model, relation_resource_name in getattr(relation, 'related', {}).items()
+            }) for relation in generic_relations},
         'validate': validate_data,
         'Meta': type('Meta', (), {'model': model, 'fields': [*fields, *list(
             map(lambda custom_field: custom_field.name, custom_fields))],

@@ -1,7 +1,7 @@
 from copy import deepcopy
 from functools import partial
 from types import FunctionType
-from typing import Type, Tuple, Sequence
+from typing import Type, Tuple, Sequence, Dict
 
 from django.apps import apps
 from django.conf.urls import url
@@ -22,7 +22,7 @@ from . import plugins
 from .common import LimitedJsonApiPageNumberPagination, JsonApiSearchFilter, LOGGER
 from .constructors import _construct_serializer, _construct_filter_backend
 from .namespace import _append_to_namespace, _RESOURCE_NAME_TO_SPICE
-from .types import CustomField, Filter, Relation
+from .types import CustomField, Filter, Relation, GenericRelation
 
 
 class JsonApiViewBuilder:
@@ -40,6 +40,7 @@ class JsonApiViewBuilder:
         self._fields = {}
         self._filters = {}
         self._relations = {}
+        self._generic_relations = {}
         self._custom_fields = {}
         self._primary_key_name = primary_key_name or 'id'
         self._allowed_methods = [*allowed_methods]
@@ -114,6 +115,17 @@ class JsonApiViewBuilder:
            required: bool = False) -> 'JsonApiViewBuilder':
         return self.add_relation(field=field, many=many, resource_name=resource_name, primary_key_name=primary_key_name,
                                  limit_to_on_retrieve=limit_to_on_retrieve, required=required)
+
+    def add_generic_relation(self, field: str,
+                             related: Dict[Type[Model], str],
+                             many: bool = False,
+                             limit_to_on_retrieve: bool = False,
+                             required: bool = False) -> 'JsonApiViewBuilder':
+        if limit_to_on_retrieve not in self._generic_relations:
+            self._generic_relations[limit_to_on_retrieve] = []
+        self._generic_relations[limit_to_on_retrieve].append(
+            GenericRelation(field=field, related=related, many=many, required=required))
+        return self
 
     def add_custom_field(self, name: str, instance_callback: FunctionType = None,
                          limit_to_on_retrieve: bool = False) -> 'JsonApiViewBuilder':
@@ -196,12 +208,17 @@ class JsonApiViewBuilder:
             relations = self._relations[limit_to_on_retrieve] if limit_to_on_retrieve in self._relations else []
             if limit_to_on_retrieve is True:
                 relations.extend(self._relations[False] if False in self._relations else [])
+            generic_relations = self._generic_relations[
+                limit_to_on_retrieve] if limit_to_on_retrieve in self._generic_relations else []
+            if limit_to_on_retrieve is True:
+                generic_relations.extend(self._generic_relations[False] if False in self._generic_relations else [])
 
             method_to_serializer[limit_to_on_retrieve] = \
                 _construct_serializer('Retrieve' if limit_to_on_retrieve else 'List', self._model, self._resource_name,
                                       fields,
                                       custom_fields,
                                       relations,
+                                      generic_relations,
                                       self._related_limit,
                                       self._primary_key_name,
                                       self._pre_update_callback if limit_to_on_retrieve else self._pre_create_callback)
