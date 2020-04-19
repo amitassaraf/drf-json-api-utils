@@ -91,7 +91,8 @@ class JsonApiModelViewBuilder:
         return self
 
     def add_filter(self, name: str, field: str = None, lookups: Sequence[str] = None,
-                   transform_value: Callable[[str, QuerySet], Tuple[str, QuerySet]] = None) -> 'JsonApiModelViewBuilder':
+                   transform_value: Callable[
+                       [str, QuerySet], Tuple[str, QuerySet]] = None) -> 'JsonApiModelViewBuilder':
         if lookups is None:
             lookups = (filter_lookups.EXACT,)
         if any(map(lambda lookup: lookup not in filter_lookups.ALL, lookups)):
@@ -459,3 +460,7 @@ def json_api_action_view(action_name: str,
             raise Exception(f'Does not support method {method}')
 
     return decorator
+
+
+# Backwards Compatibility Support
+JsonApiViewBuilder = JsonApiModelViewBuilder
