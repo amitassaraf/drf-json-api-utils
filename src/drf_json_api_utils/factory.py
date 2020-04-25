@@ -372,17 +372,17 @@ class JsonApiActionViewBuilder:
                 f'You\'ve set a lifecycle callback for resource {self._resource_name}, '
                 f'which doesn\'t allow it\'s respective HTTP method through `allowed_methods`.')
 
-    def on_create(self, create_callback: Callable[[...], Response] = None) -> 'JsonApiActionViewBuilder':
+    def on_create(self, create_callback: Callable[..., Response] = None) -> 'JsonApiActionViewBuilder':
         self._on_create_callback = create_callback
         self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_POST)
         return self
 
-    def on_update(self, update_callback: Callable[[...], Response] = None) -> 'JsonApiActionViewBuilder':
+    def on_update(self, update_callback: Callable[..., Response] = None) -> 'JsonApiActionViewBuilder':
         self._on_update_callback = update_callback
         self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_PATCH)
         return self
 
-    def on_delete(self, delete_callback: Callable[[...], Response] = None) -> 'JsonApiActionViewBuilder':
+    def on_delete(self, delete_callback: Callable[..., Response] = None) -> 'JsonApiActionViewBuilder':
         self._on_delete_callback = delete_callback
         self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_DELETE)
         return self
