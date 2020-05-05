@@ -77,6 +77,16 @@ def _construct_serializer(serializer_prefix: str, model: Type[Model], resource_n
             return on_validate(self.context['request'], self, data)
         return data
 
+    included_serializers = {}
+    for relation in relations:
+        included_serializers[
+            relation.field] = f'drf_json_api_utils.namespace.{f"{serializer_prefix}{relation.resource_name}Serializer"}'
+
+    for relation in generic_relations:
+        for related_model, relation_resource_name in getattr(relation, 'related', {}).items():
+            included_serializers[
+                relation.field] = f'drf_json_api_utils.namespace.{f"{serializer_prefix}{relation_resource_name}Serializer"}'
+
     return type(f'{serializer_prefix}{resource_name}Serializer', (serializers.HyperlinkedModelSerializer,), {
         **{custom_field.name: serializers.SerializerMethodField(read_only=True) for custom_field in
            custom_fields},
@@ -109,9 +119,7 @@ def _construct_serializer(serializer_prefix: str, model: Type[Model], resource_n
         'Meta': type('Meta', (), {'model': model, 'fields': [*fields, *list(
             map(lambda custom_field: custom_field.name, custom_fields))],
                                   'resource_name': resource_name}),
-        'included_serializers': {
-            relation.field: f'drf_json_api_utils.namespace.{f"{serializer_prefix}{relation.resource_name}Serializer"}'
-            for relation in relations}
+        'included_serializers': included_serializers
     })
 
 
