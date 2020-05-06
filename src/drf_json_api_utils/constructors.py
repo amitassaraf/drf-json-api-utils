@@ -1,7 +1,12 @@
+import copy
+import json
+from collections import OrderedDict
 from types import FunctionType
 from typing import Type, Dict, Tuple, Sequence
 
+import inflection
 from django.db.models import QuerySet, Model
+from django.utils.module_loading import import_string as import_class_from_dotted_path
 from django_filters.filterset import BaseFilterSet
 from django_filters.rest_framework import FilterSet
 from django_filters.utils import get_model_field
@@ -11,6 +16,8 @@ from rest_framework.relations import ManyRelatedField, MANY_RELATION_KWARGS
 from rest_framework_json_api import serializers
 from rest_framework_json_api.django_filters import DjangoFilterBackend
 from rest_framework_json_api.relations import ResourceRelatedField
+from rest_framework_json_api.utils import get_resource_type_from_serializer, get_resource_type_from_instance, \
+    get_resource_type_from_queryset
 
 from .namespace import _RESOURCE_NAME_TO_SPICE
 from .types import CustomField, Relation, Filter, GenericRelation
@@ -78,14 +85,113 @@ def _construct_serializer(serializer_prefix: str, model: Type[Model], resource_n
         return data
 
     included_serializers = {}
+    included_generic_serializers = {}
     for relation in relations:
         included_serializers[
             relation.field] = f'drf_json_api_utils.namespace.{f"{serializer_prefix}{relation.resource_name}Serializer"}'
 
     for relation in generic_relations:
         for related_model, relation_resource_name in getattr(relation, 'related', {}).items():
+            if relation.field not in included_generic_serializers:
+                included_generic_serializers[relation.field] = []
+            included_generic_serializers[relation.field].append(
+                f'drf_json_api_utils.namespace.{f"{serializer_prefix}{relation_resource_name}Serializer"}')
             included_serializers[
                 relation.field] = f'drf_json_api_utils.namespace.{f"{serializer_prefix}{relation_resource_name}Serializer"}'
+
+    def get_generic_included_serializers(serializer):
+        included_serializers = copy.copy(getattr(serializer, 'included_generic_serializers', dict()))
+
+        for name, serializers in iter(included_serializers.items()):
+            included_serializers[name] = []
+            for value in serializers:
+                if not isinstance(value, type):
+                    if value == 'self':
+                        included_serializers[name].append(
+                            serializer if isinstance(serializer, type) else serializer.__class__
+                        )
+                    else:
+                        included_serializers[name].append(import_class_from_dotted_path(value))
+
+        return included_serializers
+
+    def generate_generic_resource(related_model):
+        class GenericResourceRelatedField(ResourceRelatedField):
+            def use_pk_only_optimization(self):
+                return True
+
+            def to_internal_value(self, data):
+                if isinstance(data, str):
+                    try:
+                        data = json.loads(data)
+                    except ValueError:
+                        # show a useful error if they send a `pk` instead of resource object
+                        self.fail('incorrect_type', data_type=type(data).__name__)
+                if not isinstance(data, dict):
+                    self.fail('incorrect_type', data_type=type(data).__name__)
+
+                expected_relation_type = get_resource_type_from_queryset(self.get_queryset())
+                serializer_resource_type = self.get_resource_type_from_included_serializer(data)
+
+                if serializer_resource_type is not None:
+                    expected_relation_type = serializer_resource_type
+
+                if 'type' not in data:
+                    self.fail('missing_type')
+
+                if 'id' not in data:
+                    self.fail('missing_id')
+
+                if data['type'] != expected_relation_type:
+                    self.conflict(
+                        'incorrect_relation_type',
+                        relation_type=expected_relation_type,
+                        received_type=data['type']
+                    )
+
+                return super(ResourceRelatedField, self).to_internal_value(data['id'])
+
+            def to_representation(self, value):
+                if getattr(self, 'pk_field', None) is not None:
+                    pk = self.pk_field.to_representation(value.pk)
+                else:
+                    pk = value.pk
+
+                resource_type = self.get_resource_type_from_included_serializer(value)
+                if resource_type is None or not self._skip_polymorphic_optimization:
+                    resource_type = get_resource_type_from_instance(value)
+
+                return OrderedDict([('type', resource_type), ('id', str(pk))])
+
+            def get_resource_type_from_included_serializer(self, value):
+                """
+                Check to see it this resource has a different resource_name when
+                included and return that name, or None
+                """
+                field_name = self.field_name or self.parent.field_name
+                parent = self.get_parent_serializer()
+
+                if parent is not None:
+                    # accept both singular and plural versions of field_name
+                    field_names = [
+                        inflection.singularize(field_name),
+                        inflection.pluralize(field_name)
+                    ]
+                    includes = get_generic_included_serializers(parent)
+                    for field in field_names:
+                        if field in includes.keys():
+                            for serializer in includes[field]:
+                                if isinstance(value, dict) and value.get('type', None) == serializer.Meta.resource_name:
+                                    return serializer.Meta.resource_name
+                                elif isinstance(value, (serializer.Meta.model,)):
+                                    return get_resource_type_from_serializer(serializer)
+
+                return None
+
+            class Meta:
+                model = related_model
+
+        return GenericResourceRelatedField
 
     return type(f'{serializer_prefix}{resource_name}Serializer', (serializers.HyperlinkedModelSerializer,), {
         **{custom_field.name: serializers.SerializerMethodField(read_only=True) for custom_field in
@@ -104,9 +210,11 @@ def _construct_serializer(serializer_prefix: str, model: Type[Model], resource_n
         ) for relation in relations},
         **{relation.field: GenericRelatedField(
             {
-                related_model: generate_relation_field(relation)(
+                related_model: generate_generic_resource(related_model)(
+                    queryset=getattr(model, relation.field).get_queryset()
+                    if hasattr(getattr(model, relation.field), 'get_queryset')
+                    else related_model.objects.all(),
                     many=relation.many,
-                    read_only=True,
                     required=getattr(relation, 'required', False),
                     related_link_view_name=f'{relation_resource_name}-detail',
                     related_link_lookup_field=primary_key_name,
@@ -119,7 +227,8 @@ def _construct_serializer(serializer_prefix: str, model: Type[Model], resource_n
         'Meta': type('Meta', (), {'model': model, 'fields': [*fields, *list(
             map(lambda custom_field: custom_field.name, custom_fields))],
                                   'resource_name': resource_name}),
-        'included_serializers': included_serializers
+        'included_serializers': included_serializers,
+        'included_generic_serializers': included_generic_serializers
     })
 
 
