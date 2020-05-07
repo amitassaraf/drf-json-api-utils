@@ -34,7 +34,7 @@ setup(
     packages=find_packages(where='src'),
     python_requires='>=3.5',
     install_requires=['django>=3.0.0', 'djangorestframework-jsonapi', 'djangorestframework', 'django-filter',
-                      'rest-framework-generic-relations==2.0.0'],
+                      'rest-framework-generic-relations==2.0.*'],
     extras_require={
         'dev': ['check-manifest'],
         'test': ['coverage'],
