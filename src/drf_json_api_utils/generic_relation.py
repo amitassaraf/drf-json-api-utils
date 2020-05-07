@@ -1,81 +1,53 @@
-from django.core.exceptions import MultipleObjectsReturned, ObjectDoesNotExist
-from django.urls import resolve, Resolver404
-from rest_framework.fields import Field
-from rest_framework.reverse import reverse
-from rest_framework_json_api import serializers
+from collections import OrderedDict
+
+from generic_relations.relations import RenamedMethods
+from generic_relations.serializers import GenericSerializerMixin
+from rest_framework_json_api.relations import ResourceRelatedField
 
 
-class GenericRelatedField(Field):
+class UpdatedGenericSerializerMixin(GenericSerializerMixin):
+    def get_queryset(self):
+        return None
+
+
+class GenericRelatedField(UpdatedGenericSerializerMixin, ResourceRelatedField, metaclass=RenamedMethods):
     """
-    A custom field that expect object URL as input and transforms it
-    to django model instance.
+    Represents a generic relation / foreign key.
+    It's actually more of a wrapper, that delegates the logic to registered
+    serializers based on the `Model` class.
     """
-    read_only = False
-    _default_view_name = '%(model_name)s-detail'
-    lookup_field = 'pk'
 
-    def __init__(self, related_models=(), custom_resource_names=None, **kwargs):
-        super(GenericRelatedField, self).__init__(**kwargs)
-        # related models - list of models that should be acceptable by
-        # field. Note that all this models should have corresponding
-        # endpoint.
-        self.related_models = related_models
-        self._custom_resource_names = custom_resource_names or {}
+    def get_links(self, obj=None, lookup_field='pk'):
+        request = self.context.get('request', None)
+        view = self.context.get('view', None)
+        return_data = OrderedDict()
 
-    def _get_url_basename(self, obj):
-        """ Get object URL basename """
-        format_kwargs = {
-            'app_label': obj._meta.app_label,
-            'model_name': self._custom_resource_names[
-                type(obj)] if type(obj) in self._custom_resource_names else obj._meta.object_name.lower()
-        }
-        print(obj)
-        print( self._custom_resource_names)
-        print(self._default_view_name % format_kwargs)
-        return self._default_view_name % format_kwargs
+        kwargs = {lookup_field: getattr(obj, lookup_field) if obj else view.kwargs[lookup_field]}
 
-    def _get_request(self):
-        try:
-            return self.context['request']
-        except KeyError:
-            raise AttributeError('GenericRelatedField have to be initialized with `request` in context')
+        self_kwargs = kwargs.copy()
+        self_kwargs.update({
+            'related_field': self.field_name if self.field_name else self.parent.field_name
+        })
+        self_link = self.get_url('self', self.self_link_view_name, self_kwargs, request)
 
-    def to_representation(self, obj):
-        """ Serializes any object to its URL representation """
-        kwargs = {self.lookup_field: getattr(obj, self.lookup_field)}
-        request = self._get_request()
-        return request.build_absolute_uri(reverse(self._get_url_basename(obj), kwargs=kwargs))
+        # Assuming RelatedField will be declared in two ways:
+        # 1. url(r'^authors/(?P<pk>[^/.]+)/(?P<related_field>\w+)/$',
+        #         AuthorViewSet.as_view({'get': 'retrieve_related'}))
+        # 2. url(r'^authors/(?P<author_pk>[^/.]+)/bio/$',
+        #         AuthorBioViewSet.as_view({'get': 'retrieve'}))
+        # So, if related_link_url_kwarg == 'pk' it will add 'related_field' parameter to reverse()
+        related_instance = getattr(obj, self.field_name)
+        if related_instance is not None:
+            serializer = self.get_serializer_for_instance(related_instance)
+            if serializer.related_link_url_kwarg == 'pk':
+                related_kwargs = self_kwargs
+            else:
+                related_kwargs = {serializer.related_link_url_kwarg: kwargs[serializer.related_link_lookup_field]}
 
-    def clear_url(self, url):
-        """ Removes domain and protocol from url """
-        if url.startswith('http'):
-            return '/' + url.split('/', 3)[-1]
-        return url
+            related_link = self.get_url('related', serializer.related_link_view_name, related_kwargs, request)
 
-    def get_model_from_resolve_match(self, match):
-        queryset = match.func.cls.queryset
-        if queryset is not None:
-            return queryset.model
-        else:
-            return match.func.cls.model
-
-    def instance_from_url(self, url):
-        url = self.clear_url(url)
-        match = resolve(url)
-        model = self.get_model_from_resolve_match(match)
-        return model.objects.get(**match.kwargs)
-
-    def to_internal_value(self, data):
-        """ Restores model instance from its URL """
-        if not data:
-            return None
-        request = self._get_request()
-        user = request.user
-        try:
-            obj = self.instance_from_url(data)
-            model = obj.__class__
-        except (Resolver404, AttributeError, MultipleObjectsReturned, ObjectDoesNotExist):
-            raise serializers.ValidationError("Can`t restore object from url: %s" % data)
-        if model not in self.related_models:
-            raise serializers.ValidationError('%s object does not support such relationship' % str(obj))
-        return obj
+            if self_link:
+                return_data.update({'self': self_link})
+            if related_link:
+                return_data.update({'related': related_link})
+        return return_data

@@ -25,3 +25,4 @@ def _append_to_namespace(type: Type) -> None:
 
 
 _RESOURCE_NAME_TO_SPICE = {}
+_MODEL_TO_SERIALIZER = {}

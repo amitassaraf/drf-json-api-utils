@@ -10,7 +10,6 @@ from django.utils.module_loading import import_string as import_class_from_dotte
 from django_filters.filterset import BaseFilterSet
 from django_filters.rest_framework import FilterSet
 from django_filters.utils import get_model_field
-from generic_relations.relations import GenericRelatedField
 from rest_framework.fields import get_attribute
 from rest_framework.relations import ManyRelatedField, MANY_RELATION_KWARGS
 from rest_framework_json_api import serializers
@@ -19,7 +18,8 @@ from rest_framework_json_api.relations import ResourceRelatedField
 from rest_framework_json_api.utils import get_resource_type_from_serializer, get_resource_type_from_instance, \
     get_resource_type_from_queryset
 
-from .namespace import _RESOURCE_NAME_TO_SPICE
+from .generic_relation import GenericRelatedField
+from .namespace import _RESOURCE_NAME_TO_SPICE, _MODEL_TO_SERIALIZER
 from .types import CustomField, Relation, Filter, GenericRelation
 
 
@@ -193,7 +193,16 @@ def _construct_serializer(serializer_prefix: str, model: Type[Model], resource_n
 
         return GenericResourceRelatedField
 
-    return type(f'{serializer_prefix}{resource_name}Serializer', (serializers.HyperlinkedModelSerializer,), {
+    class GenericSerializer(serializers.HyperlinkedModelSerializer):
+        def __new__(cls, instance=None, *args, **kwargs):
+            check_instance = instance
+            if isinstance(instance, (list,)):
+                check_instance = instance[0]
+            if check_instance is not None and not isinstance(check_instance, (cls.Meta.model,)):
+                return _MODEL_TO_SERIALIZER[type(check_instance)](instance=instance, *args, **kwargs)
+            return super(GenericSerializer, cls).__new__(cls, instance=instance, *args, **kwargs)
+
+    new_serializer = type(f'{serializer_prefix}{resource_name}Serializer', (GenericSerializer,), {
         **{custom_field.name: serializers.SerializerMethodField(read_only=True) for custom_field in
            custom_fields},
         **{f'get_{custom_field.name}': staticmethod(custom_field.callback) for custom_field in custom_fields},
@@ -222,7 +231,9 @@ def _construct_serializer(serializer_prefix: str, model: Type[Model], resource_n
                     self_link_view_name=f'{resource_name}-relationships'
                 )
                 for related_model, relation_resource_name in getattr(relation, 'related', {}).items()
-            }) for relation in generic_relations},
+            },
+            self_link_view_name=f'{resource_name}-relationships',
+            related_link_lookup_field=primary_key_name) for relation in generic_relations},
         'validate': validate_data,
         'Meta': type('Meta', (), {'model': model, 'fields': [*fields, *list(
             map(lambda custom_field: custom_field.name, custom_fields))],
@@ -230,6 +241,8 @@ def _construct_serializer(serializer_prefix: str, model: Type[Model], resource_n
         'included_serializers': included_serializers,
         'included_generic_serializers': included_generic_serializers
     })
+    _MODEL_TO_SERIALIZER[model] = new_serializer
+    return new_serializer
 
 
 def _construct_filter_backend(model: Type[Model], resource_name: str, filters: Dict[str, Filter]) -> Tuple[Type, Type]:
