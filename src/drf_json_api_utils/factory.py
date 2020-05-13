@@ -233,19 +233,19 @@ class JsonApiModelViewBuilder:
         def perform_create(view, serializer):
             instance = serializer.save()
             if self._post_create_callback is not None:
-                self._post_create_callback(instance)
+                self._post_create_callback(instance, serializer)
 
         def perform_destroy(view, instance):
             if self._pre_delete_callback is not None:
-                self._pre_delete_callback(instance)
+                self._pre_delete_callback(instance, serializer)
             instance.delete()
             if self._post_delete_callback is not None:
-                self._post_delete_callback(instance)
+                self._post_delete_callback(instance, serializer)
 
         def perform_update(view, serializer):
             instance = serializer.save()
             if self._post_update_callback is not None:
-                self._post_update_callback(instance)
+                self._post_update_callback(instance, serializer)
 
         base_model_view_set = type(f'{self._resource_name}JSONApiModelViewSet', (ModelViewSet,), {
             'renderer_classes': (JSONRenderer, BrowsableAPIRenderer),
@@ -464,3 +464,4 @@ def json_api_action_view(action_name: str,
 
 # Backwards Compatibility Support
 JsonApiViewBuilder = JsonApiModelViewBuilder
+
