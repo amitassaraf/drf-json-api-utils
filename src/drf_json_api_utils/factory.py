@@ -195,6 +195,7 @@ class JsonApiModelViewBuilder:
 
     def after_list(self, after_list_callback: Callable[[Any], Any] = None) -> 'JsonApiModelViewBuilder':
         self._after_list_callback = after_list_callback
+        self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_GET)
         return self
 
     def _get_history_urls(self) -> Sequence[partial]:
