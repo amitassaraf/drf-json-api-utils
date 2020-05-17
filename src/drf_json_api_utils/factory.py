@@ -262,7 +262,7 @@ class JsonApiModelViewBuilder:
         def perform_get(view, instance, *args, **kwargs):
             response = super(view.__class__, view).retrieve(*args, **kwargs)
             if self._after_get_callback is not None:
-                self._after_get_callback(instance, view.get_serializer())
+                response.data = self._after_get_callback(response.data)
             return response
 
         def perform_update(view, serializer):
