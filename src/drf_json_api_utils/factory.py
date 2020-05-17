@@ -51,12 +51,14 @@ class JsonApiModelViewBuilder:
         self._related_limit = self.DEFAULT_RELATED_LIMIT
         self._permission_classes = permission_classes or []
         self._authentication_classes = authentication_classes or []
-        self._pre_create_callback = None
-        self._post_create_callback = None
-        self._pre_update_callback = None
-        self._post_update_callback = None
-        self._pre_delete_callback = None
-        self._post_delete_callback = None
+        self._before_create_callback = None
+        self._after_create_callback = None
+        self._after_get_callback = None
+        self._before_update_callback = None
+        self._after_update_callback = None
+        self._before_delete_callback = None
+        self._after_delete_callback = None
+        self._after_list_callback = None
         if queryset is None:
             self._queryset = self._model.objects
         else:
@@ -84,10 +86,21 @@ class JsonApiModelViewBuilder:
         self._fields[limit_to_on_retrieve].extend(fields)
         return self
 
+    def dummy_fields(self, fields: Sequence[str]) -> 'JsonApiModelViewBuilder':
+        self.fields(fields=fields)
+        _f = lambda instance: ''
+        self.custom_fields(fields=[(field, _f,) for field in fields])
+        return self
+
     def add_field(self, name: str, limit_to_on_retrieve: bool = False) -> 'JsonApiModelViewBuilder':
         if limit_to_on_retrieve not in self._fields:
             self._fields[limit_to_on_retrieve] = []
         self._fields[limit_to_on_retrieve].append(name)
+        return self
+
+    def add_dummy_field(self, name: str) -> 'JsonApiModelViewBuilder':
+        self.add_field(name=name)
+        self.add_custom_field(name=name, instance_callback=lambda instance: '')
         return self
 
     def add_filter(self, name: str, field: str = None, lookups: Sequence[str] = None,
@@ -150,34 +163,44 @@ class JsonApiModelViewBuilder:
         self._related_limit = limit
         return self
 
-    def pre_create(self, pre_create_callback: FunctionType = None) -> 'JsonApiModelViewBuilder':
-        self._pre_create_callback = pre_create_callback
+    def before_create(self, before_create_callback: Callable[[Any], Any] = None) -> 'JsonApiModelViewBuilder':
+        self._before_create_callback = before_create_callback
         self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_POST)
         return self
 
-    def post_create(self, pre_create_callback: FunctionType = None) -> 'JsonApiModelViewBuilder':
-        self._post_create_callback = pre_create_callback
+    def after_create(self, after_create_callback: Callable[[Any], Any] = None) -> 'JsonApiModelViewBuilder':
+        self._after_create_callback = after_create_callback
         self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_POST)
         return self
 
-    def pre_update(self, pre_update_callback: FunctionType = None) -> 'JsonApiModelViewBuilder':
-        self._pre_update_callback = pre_update_callback
+    def after_get(self, after_get_callback: Callable[[Any], Any] = None) -> 'JsonApiModelViewBuilder':
+        self._after_get_callback = after_get_callback
+        self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_GET)
+        return self
+
+    def before_update(self, before_update_callback: Callable[[Any], Any] = None) -> 'JsonApiModelViewBuilder':
+        self._before_update_callback = before_update_callback
         self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_PATCH)
         return self
 
-    def post_update(self, pre_update_callback: FunctionType = None) -> 'JsonApiModelViewBuilder':
-        self._post_update_callback = pre_update_callback
+    def after_update(self, after_update_callback: Callable[[Any], Any] = None) -> 'JsonApiModelViewBuilder':
+        self._after_update_callback = after_update_callback
         self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_PATCH)
         return self
 
-    def pre_delete(self, pre_delete_callback: FunctionType = None) -> 'JsonApiModelViewBuilder':
-        self._pre_delete_callback = pre_delete_callback
+    def before_delete(self, before_delete_callback: Callable[[Any], Any] = None) -> 'JsonApiModelViewBuilder':
+        self._before_delete_callback = before_delete_callback
         self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_DELETE)
         return self
 
-    def post_delete(self, pre_delete_callback: FunctionType = None) -> 'JsonApiModelViewBuilder':
-        self._post_delete_callback = pre_delete_callback
+    def after_delete(self, after_delete_callback: Callable[[Any], Any] = None) -> 'JsonApiModelViewBuilder':
+        self._after_delete_callback = after_delete_callback
         self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_DELETE)
+        return self
+
+    def after_list(self, after_list_callback: Callable[[Any], Any] = None) -> 'JsonApiModelViewBuilder':
+        self._after_list_callback = after_list_callback
+        self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_GET)
         return self
 
     def _get_history_urls(self) -> Sequence[partial]:
@@ -225,27 +248,39 @@ class JsonApiModelViewBuilder:
                                       generic_relations,
                                       self._related_limit,
                                       self._primary_key_name,
-                                      self._pre_update_callback if limit_to_on_retrieve else self._pre_create_callback)
+                                      self._before_update_callback if limit_to_on_retrieve else self._before_create_callback)
             _append_to_namespace(method_to_serializer[limit_to_on_retrieve])
 
         filter_set, filter_backend = _construct_filter_backend(self._model, self._resource_name, self._filters)
 
         def perform_create(view, serializer):
             instance = serializer.save()
-            if self._post_create_callback is not None:
-                self._post_create_callback(instance, serializer)
+            if self._after_create_callback is not None:
+                self._after_create_callback(instance, serializer)
 
         def perform_destroy(view, instance):
-            if self._pre_delete_callback is not None:
-                self._pre_delete_callback(instance, serializer)
+            if self._before_delete_callback is not None:
+                self._before_delete_callback(instance, view.get_serializer())
             instance.delete()
-            if self._post_delete_callback is not None:
-                self._post_delete_callback(instance, serializer)
+            if self._after_delete_callback is not None:
+                self._after_delete_callback(instance, view.get_serializer())
+
+        def perform_get(view, instance, *args, **kwargs):
+            response = super(view.__class__, view).retrieve(*args, **kwargs)
+            if self._after_get_callback is not None:
+                response.data = self._after_get_callback(response.data)
+            return response
 
         def perform_update(view, serializer):
             instance = serializer.save()
-            if self._post_update_callback is not None:
-                self._post_update_callback(instance, serializer)
+            if self._after_update_callback is not None:
+                self._after_update_callback(instance, serializer)
+
+        def perform_list(view, *args, **kwargs):
+            response = super(view.__class__, view).list(*args, **kwargs)
+            if self._after_list_callback is not None:
+                response.data = self._after_list_callback(response.data)
+            return response
 
         base_model_view_set = type(f'{self._resource_name}JSONApiModelViewSet', (ModelViewSet,), {
             'renderer_classes': (JSONRenderer, BrowsableAPIRenderer),
@@ -289,7 +324,8 @@ class JsonApiModelViewBuilder:
                 'filterset_class': filter_set,
                 'lookup_field': pk_name,
                 'perform_create': perform_create,
-                'name': f'list {self._resource_name}'
+                'name': f'list {self._resource_name}',
+                'list': perform_list
             })
 
             get_method_view_set = type(f'Get{self._resource_name}ViewSet', (base_model_view_set,), {
@@ -306,6 +342,7 @@ class JsonApiModelViewBuilder:
                 'lookup_field': pk_name,
                 'perform_update': perform_update,
                 'perform_destroy': perform_destroy,
+                'retrieve': perform_get
             })
 
             if len(urls_prefix) > 0 and urls_prefix[-1] != '/':
@@ -464,4 +501,3 @@ def json_api_action_view(action_name: str,
 
 # Backwards Compatibility Support
 JsonApiViewBuilder = JsonApiModelViewBuilder
-
