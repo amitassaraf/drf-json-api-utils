@@ -163,33 +163,33 @@ class JsonApiModelViewBuilder:
         self._related_limit = limit
         return self
 
-    def before_create(self, pre_create_callback: Callable[[Any], Any] = None) -> 'JsonApiModelViewBuilder':
-        self._before_create_callback = pre_create_callback
+    def before_create(self, before_create_callback: Callable[[Any], Any] = None) -> 'JsonApiModelViewBuilder':
+        self._before_create_callback = before_create_callback
         self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_POST)
         return self
 
-    def after_create(self, pre_create_callback: Callable[[Any], Any] = None) -> 'JsonApiModelViewBuilder':
-        self._after_create_callback = pre_create_callback
+    def after_create(self, after_create_callback: Callable[[Any], Any] = None) -> 'JsonApiModelViewBuilder':
+        self._after_create_callback = after_create_callback
         self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_POST)
         return self
 
-    def before_update(self, pre_update_callback: Callable[[Any], Any] = None) -> 'JsonApiModelViewBuilder':
-        self._before_update_callback = pre_update_callback
+    def before_update(self, before_update_callback: Callable[[Any], Any] = None) -> 'JsonApiModelViewBuilder':
+        self._before_update_callback = before_update_callback
         self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_PATCH)
         return self
 
-    def after_update(self, pre_update_callback: Callable[[Any], Any] = None) -> 'JsonApiModelViewBuilder':
-        self._after_update_callback = pre_update_callback
+    def after_update(self, after_update_callback: Callable[[Any], Any] = None) -> 'JsonApiModelViewBuilder':
+        self._after_update_callback = after_update_callback
         self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_PATCH)
         return self
 
-    def before_delete(self, pre_delete_callback: Callable[[Any], Any] = None) -> 'JsonApiModelViewBuilder':
-        self._before_delete_callback = pre_delete_callback
+    def before_delete(self, before_delete_callback: Callable[[Any], Any] = None) -> 'JsonApiModelViewBuilder':
+        self._before_delete_callback = before_delete_callback
         self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_DELETE)
         return self
 
-    def after_delete(self, pre_delete_callback: Callable[[Any], Any] = None) -> 'JsonApiModelViewBuilder':
-        self._after_delete_callback = pre_delete_callback
+    def after_delete(self, after_delete_callback: Callable[[Any], Any] = None) -> 'JsonApiModelViewBuilder':
+        self._after_delete_callback = after_delete_callback
         self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_DELETE)
         return self
 
