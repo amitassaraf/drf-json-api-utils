@@ -173,6 +173,11 @@ class JsonApiModelViewBuilder:
         self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_POST)
         return self
 
+    def after_get(self, after_get_callback: Callable[[Any], Any] = None) -> 'JsonApiModelViewBuilder':
+        self._after_get_callback = after_get_callback
+        self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_GET)
+        return self
+
     def before_update(self, before_update_callback: Callable[[Any], Any] = None) -> 'JsonApiModelViewBuilder':
         self._before_update_callback = before_update_callback
         self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_PATCH)
