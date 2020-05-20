@@ -19,7 +19,7 @@ from rest_framework_json_api.utils import get_resource_type_from_serializer, get
     get_resource_type_from_queryset
 
 from .generic_relation import GenericRelatedField
-from .namespace import _RESOURCE_NAME_TO_SPICE, _MODEL_TO_SERIALIZER
+from .namespace import _RESOURCE_NAME_TO_SPICE, _MODEL_TO_SERIALIZERS
 from .types import CustomField, Relation, Filter, GenericRelation
 
 
@@ -199,7 +199,7 @@ def _construct_serializer(serializer_prefix: str, model: Type[Model], resource_n
             if isinstance(instance, (list,)) and len(instance) > 0:
                 check_instance = instance[0]
             if check_instance is not None and not isinstance(check_instance, (cls.Meta.model, list,)):
-                return _MODEL_TO_SERIALIZER[type(check_instance)](instance=instance, *args, **kwargs)
+                return _MODEL_TO_SERIALIZERS[type(check_instance)][0](instance=instance, *args, **kwargs)
             return super(GenericSerializer, cls).__new__(cls, instance=instance, *args, **kwargs)
 
     new_serializer = type(f'{serializer_prefix}{resource_name}Serializer', (GenericSerializer,), {
@@ -216,7 +216,7 @@ def _construct_serializer(serializer_prefix: str, model: Type[Model], resource_n
             related_link_lookup_field=primary_key_name,
             related_link_url_kwarg=relation.primary_key_name or 'id',
             self_link_view_name=f'{resource_name}-relationships'
-        ) for relation in relations},
+        ) for relation in relations if hasattr(model, relation.field)},
         **{relation.field: GenericRelatedField(
             {
                 related_model: generate_generic_resource(related_model)(
@@ -233,15 +233,19 @@ def _construct_serializer(serializer_prefix: str, model: Type[Model], resource_n
                 for related_model, relation_resource_name in getattr(relation, 'related', {}).items()
             },
             self_link_view_name=f'{resource_name}-relationships',
-            related_link_lookup_field=primary_key_name) for relation in generic_relations},
+            related_link_lookup_field=primary_key_name) for relation in generic_relations if
+            hasattr(model, relation.field)},
         'validate': validate_data,
-        'Meta': type('Meta', (), {'model': model, 'fields': [*fields, *list(
-            map(lambda custom_field: custom_field.name, custom_fields))],
-                                  'resource_name': resource_name}),
+        'Meta': type('Meta', (),
+                     {'model': model, 'fields': [*[field for field in [*fields] if hasattr(model, field)], *list(
+                         map(lambda custom_field: custom_field.name, custom_fields))],
+                      'resource_name': resource_name}),
         'included_serializers': included_serializers,
         'included_generic_serializers': included_generic_serializers
     })
-    _MODEL_TO_SERIALIZER[model] = new_serializer
+    if model not in _MODEL_TO_SERIALIZERS:
+        _MODEL_TO_SERIALIZERS[model] = []
+    _MODEL_TO_SERIALIZERS[model].append(new_serializer)
     return new_serializer
 
 

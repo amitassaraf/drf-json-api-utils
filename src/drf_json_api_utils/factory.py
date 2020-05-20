@@ -1,7 +1,7 @@
 from copy import deepcopy
 from functools import partial
 from types import FunctionType
-from typing import Type, Tuple, Sequence, Dict, Callable, Any
+from typing import Type, Tuple, Sequence, Dict, Callable, Any, Optional
 
 from django.apps import apps
 from django.conf.urls import url
@@ -24,20 +24,21 @@ from . import lookups as filter_lookups
 from . import plugins
 from .common import LimitedJsonApiPageNumberPagination, JsonApiSearchFilter, LOGGER
 from .constructors import _construct_serializer, _construct_filter_backend
-from .namespace import _append_to_namespace, _RESOURCE_NAME_TO_SPICE
+from .namespace import _append_to_namespace, _RESOURCE_NAME_TO_SPICE, _MODEL_TO_SERIALIZERS
 from .types import CustomField, Filter, Relation, GenericRelation
 
 
 class JsonApiModelViewBuilder:
     DEFAULT_RELATED_LIMIT = 100
 
-    def __init__(self, model: Type[Model], primary_key_name: str = None, resource_name: str = None,
+    def __init__(self, model: Type[Model], primary_key_name: Optional[str] = None, resource_name: Optional[str] = None,
                  allowed_methods=json_api_spec_http_methods.HTTP_ALL,
-                 permission_classes: Sequence[Type[BasePermission]] = None,
-                 authentication_classes: Sequence[Type[BaseAuthentication]] = None,
-                 queryset: QuerySet = None,
-                 permitted_objects: Callable[[Request, QuerySet], QuerySet] = None,
-                 skip_plugins: Sequence[str] = None):
+                 permission_classes: Optional[Sequence[Type[BasePermission]]] = None,
+                 authentication_classes: Optional[Sequence[Type[BaseAuthentication]]] = None,
+                 queryset: Optional[QuerySet] = None,
+                 permitted_objects: Optional[Callable[[Request, QuerySet], QuerySet]] = None,
+                 skip_plugins: Optional[Sequence[str]] = None,
+                 plugin_options: Optional[Dict[str, Any]] = None):
         self.__validate_http_methods(allowed_methods)
         self._model = model
         self._fields = {}
@@ -64,7 +65,8 @@ class JsonApiModelViewBuilder:
         else:
             self._queryset = queryset
         self._spice_queryset = permitted_objects
-        self._skip_plugins = skip_plugins or []
+        self._skip_plugins = skip_plugins if skip_plugins is not None else [plugins.AUTO_ADMIN_VIEWS]
+        self._plugin_options = plugin_options or {}
 
     @staticmethod
     def __validate_http_methods(limit_to_http_methods: Sequence[str] = json_api_spec_http_methods.HTTP_ALL):
@@ -205,12 +207,13 @@ class JsonApiModelViewBuilder:
 
     def _get_history_urls(self) -> Sequence[partial]:
         history_builder = deepcopy(self)
-        history_builder._skip_plugins = [plugins.DJANGO_SIMPLE_HISTORY]
+        history_builder._skip_plugins = [plugins.DJANGO_SIMPLE_HISTORY, plugins.AUTO_ADMIN_VIEWS]
         history_builder._model = apps.get_model(self._model.objects.model._meta.db_table.split('_')[0],
                                                 f'Historical{self._model.__name__}')
         history_builder._queryset = self._model.history
         history_builder._resource_name = f'historical_{self._resource_name}'
 
+        history_builder._custom_fields = []
         history_urls = history_builder.fields(['history_date', 'history_change_reason', 'history_id', 'history_type']) \
             .add_filter(name='history_date', lookups=(
             filter_lookups.EXACT, filter_lookups.IN, filter_lookups.LT, filter_lookups.LTE, filter_lookups.GT,
@@ -222,34 +225,56 @@ class JsonApiModelViewBuilder:
 
         return history_urls
 
-    def _build(self, url_resource_name: str = '', urls_prefix: str = '') -> Sequence[partial]:
-        method_to_serializer = {}
-        for limit_to_on_retrieve in [False, True]:
-            fields = self._fields[limit_to_on_retrieve] if limit_to_on_retrieve in self._fields else []
-            if limit_to_on_retrieve is True:
-                fields.extend(self._fields[False] if False in self._fields else [])
-            custom_fields = self._custom_fields[
-                limit_to_on_retrieve] if limit_to_on_retrieve in self._custom_fields else []
-            if limit_to_on_retrieve is True:
-                custom_fields.extend(self._custom_fields[False] if False in self._custom_fields else [])
-            relations = self._relations[limit_to_on_retrieve] if limit_to_on_retrieve in self._relations else []
-            if limit_to_on_retrieve is True:
-                relations.extend(self._relations[False] if False in self._relations else [])
-            generic_relations = self._generic_relations[
-                limit_to_on_retrieve] if limit_to_on_retrieve in self._generic_relations else []
-            if limit_to_on_retrieve is True:
-                generic_relations.extend(self._generic_relations[False] if False in self._generic_relations else [])
+    def _get_admin_urls(self) -> Sequence[partial]:
+        admin_builder = deepcopy(self)
+        admin_builder._skip_plugins = [plugins.AUTO_ADMIN_VIEWS]
+        admin_builder._spice_queryset = None
+        admin_builder._resource_name = f'admin_view_{admin_builder._resource_name}'
+        admin_permission_class = admin_builder._plugin_options.get(plugins.AUTO_ADMIN_VIEWS, {}).get(
+            'ADMIN_PERMISSION_CLASS')
 
-            method_to_serializer[limit_to_on_retrieve] = \
-                _construct_serializer('Retrieve' if limit_to_on_retrieve else 'List', self._model, self._resource_name,
-                                      fields,
-                                      custom_fields,
-                                      relations,
-                                      generic_relations,
-                                      self._related_limit,
-                                      self._primary_key_name,
-                                      self._before_update_callback if limit_to_on_retrieve else self._before_create_callback)
-            _append_to_namespace(method_to_serializer[limit_to_on_retrieve])
+        if admin_permission_class is not None:
+            admin_builder._permission_classes = [*admin_builder._permission_classes, admin_permission_class]
+
+        admin_urls = admin_builder._build(url_resource_name=self._resource_name, urls_prefix='admin/',
+                                          ignore_serializer=True)
+
+        return admin_urls
+
+    def _build(self, url_resource_name: str = '', urls_prefix: str = '', ignore_serializer: bool = False) -> Sequence[
+        partial]:
+        method_to_serializer = {}
+        if not ignore_serializer:
+            for limit_to_on_retrieve in [False, True]:
+                fields = self._fields[limit_to_on_retrieve] if limit_to_on_retrieve in self._fields else []
+                if limit_to_on_retrieve is True:
+                    fields.extend(self._fields[False] if False in self._fields else [])
+                custom_fields = self._custom_fields[
+                    limit_to_on_retrieve] if limit_to_on_retrieve in self._custom_fields else []
+                if limit_to_on_retrieve is True:
+                    custom_fields.extend(self._custom_fields[False] if False in self._custom_fields else [])
+                relations = self._relations[limit_to_on_retrieve] if limit_to_on_retrieve in self._relations else []
+                if limit_to_on_retrieve is True:
+                    relations.extend(self._relations[False] if False in self._relations else [])
+                generic_relations = self._generic_relations[
+                    limit_to_on_retrieve] if limit_to_on_retrieve in self._generic_relations else []
+                if limit_to_on_retrieve is True:
+                    generic_relations.extend(self._generic_relations[False] if False in self._generic_relations else [])
+
+                method_to_serializer[limit_to_on_retrieve] = \
+                    _construct_serializer('Retrieve' if limit_to_on_retrieve else 'List', self._model,
+                                          self._resource_name,
+                                          fields,
+                                          custom_fields,
+                                          relations,
+                                          generic_relations,
+                                          self._related_limit,
+                                          self._primary_key_name,
+                                          self._before_update_callback if limit_to_on_retrieve else self._before_create_callback)
+                _append_to_namespace(method_to_serializer[limit_to_on_retrieve])
+        else:
+            method_to_serializer[False] = _MODEL_TO_SERIALIZERS[self._model][0]
+            method_to_serializer[True] = _MODEL_TO_SERIALIZERS[self._model][1]
 
         filter_set, filter_backend = _construct_filter_backend(self._model, self._resource_name, self._filters)
 
@@ -373,8 +398,11 @@ class JsonApiModelViewBuilder:
                 import simple_history
 
                 urls.extend(self._get_history_urls())
-            except:
+            except Exception as e:
                 pass
+
+        if plugins.AUTO_ADMIN_VIEWS not in self._skip_plugins:
+            urls.extend(self._get_admin_urls())
 
         return urls
 
