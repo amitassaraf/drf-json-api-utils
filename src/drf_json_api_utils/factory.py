@@ -291,7 +291,7 @@ class JsonApiModelViewBuilder:
                 self._after_delete_callback(instance, view.get_serializer())
 
         def perform_get(view, instance, *args, **kwargs):
-            response = super(view.__class__, view).retrieve(*args, **kwargs)
+            response = super(view.__class__, view).retrieve(instance, *args, **kwargs)
             if self._after_get_callback is not None:
                 response.data = self._after_get_callback(response.data)
             return response
