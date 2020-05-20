@@ -38,6 +38,7 @@ class JsonApiModelViewBuilder:
                  queryset: Optional[QuerySet] = None,
                  permitted_objects: Optional[Callable[[Request, QuerySet], QuerySet]] = None,
                  skip_plugins: Optional[Sequence[str]] = None,
+                 include_plugins: Optional[Sequence[str]] = None,
                  plugin_options: Optional[Dict[str, Any]] = None):
         self.__validate_http_methods(allowed_methods)
         self._model = model
@@ -66,6 +67,10 @@ class JsonApiModelViewBuilder:
             self._queryset = queryset
         self._spice_queryset = permitted_objects
         self._skip_plugins = skip_plugins if skip_plugins is not None else [plugins.AUTO_ADMIN_VIEWS]
+        include_plugins = include_plugins or []
+        for item in include_plugins:
+            if item in self._skip_plugins:
+                self._skip_plugins.remove(item)
         self._plugin_options = plugin_options or {}
 
     @staticmethod
