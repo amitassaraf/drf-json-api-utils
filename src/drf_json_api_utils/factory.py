@@ -275,7 +275,8 @@ class JsonApiModelViewBuilder:
                                           generic_relations,
                                           self._related_limit,
                                           self._primary_key_name,
-                                          self._before_update_callback if limit_to_on_retrieve else self._before_create_callback)
+                                          self._before_update_callback if limit_to_on_retrieve else self._before_create_callback,
+                                          self._after_list_callback)
                 _append_to_namespace(method_to_serializer[limit_to_on_retrieve])
         else:
             method_to_serializer[False] = _MODEL_TO_SERIALIZERS[self._model][0]

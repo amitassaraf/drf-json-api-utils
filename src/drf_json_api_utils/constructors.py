@@ -2,7 +2,7 @@ import copy
 import json
 from collections import OrderedDict
 from types import FunctionType
-from typing import Type, Dict, Tuple, Sequence
+from typing import Type, Dict, Tuple, Sequence, Callable
 
 import inflection
 from django.db.models import QuerySet, Model
@@ -12,6 +12,7 @@ from django_filters.rest_framework import FilterSet
 from django_filters.utils import get_model_field
 from rest_framework.fields import get_attribute
 from rest_framework.relations import ManyRelatedField, MANY_RELATION_KWARGS
+from rest_framework.utils.serializer_helpers import ReturnDict
 from rest_framework_json_api import serializers
 from rest_framework_json_api.django_filters import DjangoFilterBackend
 from rest_framework_json_api.relations import ResourceRelatedField
@@ -26,7 +27,8 @@ from .types import CustomField, Relation, Filter, GenericRelation
 def _construct_serializer(serializer_prefix: str, model: Type[Model], resource_name: str, fields: Sequence[str],
                           custom_fields: Sequence[CustomField], relations: Sequence[Relation],
                           generic_relations: Sequence[GenericRelation], related_limit: int,
-                          primary_key_name: str, on_validate: FunctionType = None) -> Type:
+                          primary_key_name: str, on_validate: FunctionType = None,
+                          after_list_callback: Callable = None) -> Type:
     def to_representation(self, iterable):
         if isinstance(iterable, QuerySet):
             real_count = iterable.count()
@@ -201,6 +203,13 @@ def _construct_serializer(serializer_prefix: str, model: Type[Model], resource_n
             if check_instance is not None and not isinstance(check_instance, (cls.Meta.model, list,)):
                 return _MODEL_TO_SERIALIZERS[type(check_instance)][0](instance=instance, *args, **kwargs)
             return super(GenericSerializer, cls).__new__(cls, instance=instance, *args, **kwargs)
+
+        @property
+        def data(self):
+            ret = super().data
+            if after_list_callback is not None:
+                ret = after_list_callback({'results': [ret]})['results'][0]
+            return ReturnDict(ret, serializer=self)
 
     new_serializer = type(f'{serializer_prefix}{resource_name}Serializer', (GenericSerializer,), {
         **{custom_field.name: serializers.SerializerMethodField(read_only=True) for custom_field in
