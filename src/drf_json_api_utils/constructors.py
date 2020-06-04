@@ -21,7 +21,7 @@ from rest_framework_json_api.utils import get_resource_type_from_serializer, get
 
 from .generic_relation import GenericRelatedField
 from .namespace import _RESOURCE_NAME_TO_SPICE, _MODEL_TO_SERIALIZERS
-from .types import CustomField, Relation, Filter, GenericRelation
+from .types import CustomField, Relation, Filter, GenericRelation, ComputedFilter
 
 
 def _construct_serializer(serializer_prefix: str, model: Type[Model], resource_name: str, fields: Sequence[str],
@@ -258,7 +258,8 @@ def _construct_serializer(serializer_prefix: str, model: Type[Model], resource_n
     return new_serializer
 
 
-def _construct_filter_backend(model: Type[Model], resource_name: str, filters: Dict[str, Filter]) -> Tuple[Type, Type]:
+def _construct_filter_backend(model: Type[Model], resource_name: str, filters: Dict[str, Filter],
+                              computed_filters: Dict[str, ComputedFilter]) -> Tuple[Type, Type]:
     constructed_filters_transform_callbacks = {}
     constructed_filters = {}
     for key, filter in filters.items():
@@ -274,6 +275,10 @@ def _construct_filter_backend(model: Type[Model], resource_name: str, filters: D
 
     filter_set = type(f'{resource_name}FilterSet', (FilterSet,), {
         **constructed_filters,
+        **{field: computed_filter.filter_type(method=f'filter_{field}') for field, computed_filter in
+           computed_filters.items()},
+        **{f'filter_{field}': lambda self, queryset, field_name, value: computed_filter.filter_func(queryset, value) for
+           field, computed_filter in computed_filters.items()},
         'Meta': type('Meta', (), {
             'model': model,
             'fields': []

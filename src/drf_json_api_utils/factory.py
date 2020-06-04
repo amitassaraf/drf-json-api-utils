@@ -25,7 +25,7 @@ from . import plugins
 from .common import LimitedJsonApiPageNumberPagination, JsonApiSearchFilter, LOGGER
 from .constructors import _construct_serializer, _construct_filter_backend
 from .namespace import _append_to_namespace, _RESOURCE_NAME_TO_SPICE, _MODEL_TO_SERIALIZERS
-from .types import CustomField, Filter, Relation, GenericRelation
+from .types import CustomField, Filter, Relation, GenericRelation, ComputedFilter
 
 
 class JsonApiModelViewBuilder:
@@ -44,6 +44,7 @@ class JsonApiModelViewBuilder:
         self._model = model
         self._fields = {}
         self._filters = {}
+        self._computed_filters = {}
         self._relations = {}
         self._generic_relations = {}
         self._custom_fields = {}
@@ -120,6 +121,13 @@ class JsonApiModelViewBuilder:
                 f'Filter lookups are invalid: '
                 f'{list(filter(lambda lookup: lookup not in filter_lookups.ALL, lookups))}')
         self._filters[name] = Filter(field=field or name, lookups=lookups, transform_value=transform_value)
+        return self
+
+    def add_computed_filter(self, name: str, filter_type: Filter,
+                            filter_func: Callable[[QuerySet], str],
+                            field: str = None) -> 'JsonApiModelViewBuilder':
+        self._computed_filters[name] = ComputedFilter(field=field or name, filter_func=filter_func,
+                                                      filter_type=filter_type)
         return self
 
     def add_relation(self, field: str, many: bool = False, resource_name: str = None,
@@ -282,7 +290,8 @@ class JsonApiModelViewBuilder:
             method_to_serializer[False] = _MODEL_TO_SERIALIZERS[self._model][0]
             method_to_serializer[True] = _MODEL_TO_SERIALIZERS[self._model][1]
 
-        filter_set, filter_backend = _construct_filter_backend(self._model, self._resource_name, self._filters)
+        filter_set, filter_backend = _construct_filter_backend(self._model, self._resource_name, self._filters,
+                                                               self._computed_filters)
 
         def perform_create(view, serializer):
             instance = serializer.save()
