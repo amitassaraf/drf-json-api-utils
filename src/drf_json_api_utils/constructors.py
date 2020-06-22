@@ -10,6 +10,7 @@ from django.utils.module_loading import import_string as import_class_from_dotte
 from django_filters.filterset import BaseFilterSet
 from django_filters.rest_framework import FilterSet
 from django_filters.utils import get_model_field
+from rest_framework.exceptions import ValidationError
 from rest_framework.fields import get_attribute
 from rest_framework.relations import ManyRelatedField, MANY_RELATION_KWARGS
 from rest_framework.utils.serializer_helpers import ReturnDict
@@ -83,7 +84,10 @@ def _construct_serializer(serializer_prefix: str, model: Type[Model], resource_n
 
     def validate_data(self, data):
         if on_validate is not None:
-            return on_validate(self.context['request'], self, data)
+            try:
+                return on_validate(self.context['request'], self, data)
+            except Exception as e:
+                raise ValidationError(detail=str(e))
         return data
 
     included_serializers = {}

@@ -425,12 +425,11 @@ class JsonApiModelViewBuilder:
         return self._build(url_resource_name=url_resource_name, urls_prefix=urls_prefix)
 
 
-class JsonApiActionViewBuilder:
+class __JsonApiViewBuilder:
     def __init__(self, action_name: str = None,
                  allowed_methods=json_api_spec_http_methods.HTTP_ACTIONS,
                  permission_classes: Sequence[Type[BasePermission]] = None,
                  authentication_classes: Sequence[Type[BaseAuthentication]] = None):
-        self.__validate_http_methods(allowed_methods)
         self._allowed_methods = [*allowed_methods]
         self._resource_name = action_name
         self._permission_classes = permission_classes or []
@@ -438,13 +437,7 @@ class JsonApiActionViewBuilder:
         self._on_create_callback = None
         self._on_update_callback = None
         self._on_delete_callback = None
-
-    @staticmethod
-    def __validate_http_methods(limit_to_http_methods: Sequence[str] = json_api_spec_http_methods.HTTP_ALL):
-        if any(map(lambda method: method not in json_api_spec_http_methods.HTTP_ACTIONS, limit_to_http_methods)):
-            raise Exception(
-                f'Cannot limit actions fields to HTTP Method of types: '
-                f'{list(filter(lambda method: method not in json_api_spec_http_methods.HTTP_ACTIONS, limit_to_http_methods))}')
+        self._on_get_callback = None
 
     def __warn_if_method_not_available(self, method: str):
         if method not in self._allowed_methods:
@@ -452,33 +445,46 @@ class JsonApiActionViewBuilder:
                 f'You\'ve set a lifecycle callback for resource {self._resource_name}, '
                 f'which doesn\'t allow it\'s respective HTTP method through `allowed_methods`.')
 
-    def on_create(self, create_callback: Callable[..., Response] = None) -> 'JsonApiActionViewBuilder':
+    def on_create(self, create_callback: Callable[[Request], Tuple[Dict, int]] = None) -> 'JsonApiActionViewBuilder':
         self._on_create_callback = create_callback
         self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_POST)
         return self
 
-    def on_update(self, update_callback: Callable[..., Response] = None) -> 'JsonApiActionViewBuilder':
+    def on_update(self, update_callback: Callable[[Request], Tuple[Dict, int]] = None) -> 'JsonApiActionViewBuilder':
         self._on_update_callback = update_callback
         self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_PATCH)
         return self
 
-    def on_delete(self, delete_callback: Callable[..., Response] = None) -> 'JsonApiActionViewBuilder':
+    def on_delete(self, delete_callback: Callable[[Request], Tuple[Dict, int]] = None) -> 'JsonApiActionViewBuilder':
         self._on_delete_callback = delete_callback
         self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_DELETE)
+        return self
+
+    def on_get(self, get_callback: Callable[[Request], Tuple[Dict, int]] = None) -> 'JsonApiActionViewBuilder':
+        self._on_get_callback = get_callback
+        self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_GET)
         return self
 
     def _build(self, url_resource_name: str = '', urls_prefix: str = '', urls_suffix: str = '') -> Sequence[partial]:
         def destroy(view, request, *args, **kwargs):
             if self._on_delete_callback is not None:
-                self._on_delete_callback(request, *args, **kwargs)
+                data, status = self._on_delete_callback(request, *args, **kwargs)
+                return Response(data={'type': self._resource_name, 'attributes': data}, status=status)
 
         def update(view, request, *args, **kwargs):
             if self._on_update_callback is not None:
-                self._on_update_callback(request, *args, **kwargs)
+                data, status = self._on_update_callback(request, *args, **kwargs)
+                return Response(data={'type': self._resource_name, 'attributes': data}, status=status)
 
         def create(view, request, *args, **kwargs):
             if self._on_create_callback is not None:
-                self._on_create_callback(request, *args, **kwargs)
+                data, status = self._on_create_callback(request, *args, **kwargs)
+                return Response(data={'type': self._resource_name, 'attributes': data}, status=status)
+
+        def get(view, request, *args, **kwargs):
+            if self._on_get_callback is not None:
+                data, status = self._on_get_callback(request, *args, **kwargs)
+                return Response(data={'type': self._resource_name, 'attributes': data}, status=status)
 
         view_set = type(f'{self._resource_name}JSONApiActionViewSet', (ViewSet,), {
             'renderer_classes': (JSONRenderer, BrowsableAPIRenderer),
@@ -493,7 +499,8 @@ class JsonApiActionViewBuilder:
             'authentication_classes': self._authentication_classes,
             'create': create,
             'update': update,
-            'destroy': destroy
+            'destroy': destroy,
+            'get': get
         })
 
         urls = []
@@ -506,7 +513,7 @@ class JsonApiActionViewBuilder:
 
         urls.extend([
             url(rf'^{urls_prefix}{url_resource_name}{urls_suffix}$',
-                view_set.as_view({'post': 'create', 'patch': 'update', 'delete': 'destroy'},
+                view_set.as_view({'post': 'create', 'patch': 'update', 'delete': 'destroy', 'get': 'get'},
                                  name=f'list_{self._resource_name}'),
                 name=f'{self._resource_name}-action'),
         ])
@@ -516,18 +523,21 @@ class JsonApiActionViewBuilder:
         return self._build(url_resource_name=url_resource_name, urls_prefix=urls_prefix, urls_suffix=urls_suffix)
 
 
-def json_api_action_view(action_name: str,
-                         method: str = json_api_spec_http_methods.HTTP_POST,
-                         permission_classes: Sequence[Type[BasePermission]] = None,
-                         authentication_classes: Sequence[Type[BaseAuthentication]] = None,
-                         urls_prefix: str = '',
-                         urls_suffix: str = '', ) -> FunctionType:
-    def decorator(func):
-        builder = JsonApiActionViewBuilder(action_name=action_name,
-                                           allowed_methods=[method],
-                                           permission_classes=permission_classes,
-                                           authentication_classes=authentication_classes)
-        if method == json_api_spec_http_methods.HTTP_POST:
+def json_api_view(resource_name: str,
+                  method: str = json_api_spec_http_methods.HTTP_GET,
+                  permission_classes: Optional[Sequence[Type[BasePermission]]] = None,
+                  authentication_classes: Optional[Sequence[Type[BaseAuthentication]]] = None,
+                  urls_prefix: str = '',
+                  urls_suffix: str = '', ) -> FunctionType:
+    def decorator(func: Callable[[Request], Tuple[Dict, int]]):
+        builder = __JsonApiViewBuilder(action_name=resource_name,
+                                       allowed_methods=[method],
+                                       permission_classes=permission_classes,
+                                       authentication_classes=authentication_classes)
+        if method == json_api_spec_http_methods.HTTP_GET:
+            return builder.on_get(get_callback=func) \
+                .get_urls(urls_prefix=urls_prefix, urls_suffix=urls_suffix)
+        elif method == json_api_spec_http_methods.HTTP_POST:
             return builder.on_create(create_callback=func) \
                 .get_urls(urls_prefix=urls_prefix, urls_suffix=urls_suffix)
         elif method == json_api_spec_http_methods.HTTP_DELETE:
