@@ -1,7 +1,8 @@
+import math
 from copy import deepcopy
 from functools import partial
 from types import FunctionType
-from typing import Type, Tuple, Sequence, Dict, Callable, Any, Optional
+from typing import Type, Tuple, Sequence, Dict, Callable, Any, Optional, List
 
 from django.apps import apps
 from django.conf.urls import url
@@ -425,18 +426,22 @@ class JsonApiModelViewBuilder:
         return self._build(url_resource_name=url_resource_name, urls_prefix=urls_prefix)
 
 
-class __JsonApiViewBuilder:
-    def __init__(self, action_name: str = None,
+class JsonApiResourceViewBuilder:
+    def __init__(self,
+                 action_name: str = None,
+                 unique_identifier: Optional[str] = 'id',
                  allowed_methods=json_api_spec_http_methods.HTTP_ACTIONS,
                  permission_classes: Sequence[Type[BasePermission]] = None,
                  authentication_classes: Sequence[Type[BaseAuthentication]] = None):
         self._allowed_methods = [*allowed_methods]
         self._resource_name = action_name
+        self._unique_identifier = unique_identifier
         self._permission_classes = permission_classes or []
         self._authentication_classes = authentication_classes or []
         self._on_create_callback = None
         self._on_update_callback = None
         self._on_delete_callback = None
+        self._on_list_callback = None
         self._on_get_callback = None
 
     def __warn_if_method_not_available(self, method: str):
@@ -445,31 +450,38 @@ class __JsonApiViewBuilder:
                 f'You\'ve set a lifecycle callback for resource {self._resource_name}, '
                 f'which doesn\'t allow it\'s respective HTTP method through `allowed_methods`.')
 
-    def on_create(self, create_callback: Callable[[Request], Tuple[Dict, int]] = None) -> 'JsonApiActionViewBuilder':
+    def on_create(self, create_callback: Callable[[Request], Tuple[Dict, int]] = None) -> 'JsonApiResourceViewBuilder':
         self._on_create_callback = create_callback
         self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_POST)
         return self
 
-    def on_update(self, update_callback: Callable[[Request], Tuple[Dict, int]] = None) -> 'JsonApiActionViewBuilder':
+    def on_update(self, update_callback: Callable[[Request], Tuple[Dict, int]] = None) -> 'JsonApiResourceViewBuilder':
         self._on_update_callback = update_callback
         self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_PATCH)
         return self
 
-    def on_delete(self, delete_callback: Callable[[Request], Tuple[Dict, int]] = None) -> 'JsonApiActionViewBuilder':
+    def on_delete(self, delete_callback: Callable[[Request], Tuple[int]] = None) -> 'JsonApiResourceViewBuilder':
         self._on_delete_callback = delete_callback
         self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_DELETE)
         return self
 
-    def on_get(self, get_callback: Callable[[Request], Tuple[Dict, int]] = None) -> 'JsonApiActionViewBuilder':
+    def on_list(self, list_callback: Callable[[Request], Tuple[List, int, int]] = None) -> 'JsonApiResourceViewBuilder':
+        self._on_list_callback = list_callback
+        self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_GET)
+        return self
+
+    def on_get(self, get_callback: Callable[[Request], Tuple[Dict, int]] = None) -> 'JsonApiResourceViewBuilder':
         self._on_get_callback = get_callback
         self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_GET)
         return self
 
     def _build(self, url_resource_name: str = '', urls_prefix: str = '', urls_suffix: str = '') -> Sequence[partial]:
         def destroy(view, request, *args, **kwargs):
+            identifier = kwargs.get(self._unique_identifier, None)
+
             if self._on_delete_callback is not None:
-                data, status = self._on_delete_callback(request, *args, **kwargs)
-                return Response(data={'type': self._resource_name, 'attributes': data}, status=status)
+                status = self._on_delete_callback(request, identifier, *args, **kwargs)
+                return Response(data={}, status=status)
 
         def update(view, request, *args, **kwargs):
             if self._on_update_callback is not None:
@@ -481,9 +493,31 @@ class __JsonApiViewBuilder:
                 data, status = self._on_create_callback(request, *args, **kwargs)
                 return Response(data={'type': self._resource_name, 'attributes': data}, status=status)
 
+        def _list(view, request, *args, **kwargs):
+            params = request.query_params
+            page = params.get('page_number', 1)
+            if self._on_list_callback is not None:
+                data, count, status = self._on_list_callback(request, page, *args, **kwargs)
+                pages = math.ceil(count / 50)
+                return Response(data={'links': {
+                    "first": f"/api/{self._resource_name}?page_number=1",
+                    "last": f"/api/{self._resource_name}?page_number={pages}",
+                    "next": None if page == pages or pages <= 1 else f"/api/{self._resource_name}?page_number={page + 1}",
+                    "previous": None if page <= 1 else f"/api/{self._resource_name}?page_number={page - 1}",
+                }, 'data': data, 'meta': {
+                    'pagination': {
+                        "page": page,
+                        "pages": pages,
+                        "count": count
+                    }
+                }
+                }, status=status)
+
         def get(view, request, *args, **kwargs):
+            identifier = kwargs.get(self._unique_identifier, None)
+
             if self._on_get_callback is not None:
-                data, status = self._on_get_callback(request, *args, **kwargs)
+                data, status = self._on_get_callback(request, identifier, *args, **kwargs)
                 return Response(data={'type': self._resource_name, 'attributes': data}, status=status)
 
         view_set = type(f'{self._resource_name}JSONApiActionViewSet', (ViewSet,), {
@@ -493,13 +527,14 @@ class __JsonApiViewBuilder:
             'pagination_class': LimitedJsonApiPageNumberPagination,
             'filter_backends': (
                 QueryParameterValidationFilter, OrderingFilter, JsonApiSearchFilter),
-            'resource_name': self._resource_name,
+            'resource_name': None,
             'http_method_names': list(map(lambda method: method.lower(), self._allowed_methods)) + ['head', 'options'],
             'permission_classes': self._permission_classes,
             'authentication_classes': self._authentication_classes,
             'create': create,
             'update': update,
             'destroy': destroy,
+            'list': _list,
             'get': get
         })
 
@@ -513,9 +548,13 @@ class __JsonApiViewBuilder:
 
         urls.extend([
             url(rf'^{urls_prefix}{url_resource_name}{urls_suffix}$',
-                view_set.as_view({'post': 'create', 'patch': 'update', 'delete': 'destroy', 'get': 'get'},
+                view_set.as_view({'post': 'create', 'get': 'list'},
                                  name=f'list_{self._resource_name}'),
                 name=f'{self._resource_name}-action'),
+            url(rf'^{urls_prefix}{url_resource_name}{urls_suffix}/(?P<{self._unique_identifier}>[^/.]+)/$',
+                view_set.as_view({'patch': 'update', 'delete': 'destroy', 'get': 'get'},
+                                 name=f'retrieve_{self._resource_name}'),
+                name=f'{self._resource_name}-action')
         ])
         return urls
 
@@ -530,12 +569,12 @@ def json_api_view(resource_name: str,
                   urls_prefix: str = '',
                   urls_suffix: str = '', ) -> FunctionType:
     def decorator(func: Callable[[Request], Tuple[Dict, int]]):
-        builder = __JsonApiViewBuilder(action_name=resource_name,
-                                       allowed_methods=[method],
-                                       permission_classes=permission_classes,
-                                       authentication_classes=authentication_classes)
+        builder = JsonApiResourceViewBuilder(action_name=resource_name,
+                                             allowed_methods=[method],
+                                             permission_classes=permission_classes,
+                                             authentication_classes=authentication_classes)
         if method == json_api_spec_http_methods.HTTP_GET:
-            return builder.on_get(get_callback=func) \
+            return builder.on_list(list_callback=func) \
                 .get_urls(urls_prefix=urls_prefix, urls_suffix=urls_suffix)
         elif method == json_api_spec_http_methods.HTTP_POST:
             return builder.on_create(create_callback=func) \
