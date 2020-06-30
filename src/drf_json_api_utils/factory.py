@@ -504,7 +504,7 @@ class JsonApiResourceViewBuilder:
                     "last": f"/api/{self._resource_name}?page_number={pages}",
                     "next": None if page == pages or pages <= 1 else f"/api/{self._resource_name}?page_number={page + 1}",
                     "previous": None if page <= 1 else f"/api/{self._resource_name}?page_number={page - 1}",
-                }, 'data': data, 'meta': {
+                }, 'data': [{'type': self._resource_name, 'attributes': item} for item in data], 'meta': {
                     'pagination': {
                         "page": page,
                         "pages": pages,
