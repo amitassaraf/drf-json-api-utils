@@ -450,7 +450,8 @@ class JsonApiResourceViewBuilder:
                 f'You\'ve set a lifecycle callback for resource {self._resource_name}, '
                 f'which doesn\'t allow it\'s respective HTTP method through `allowed_methods`.')
 
-    def on_create(self, create_callback: Callable[[Request], Tuple[Dict, str, int]] = None) -> 'JsonApiResourceViewBuilder':
+    def on_create(self,
+                  create_callback: Callable[[Request], Tuple[Dict, str, int]] = None) -> 'JsonApiResourceViewBuilder':
         self._on_create_callback = create_callback
         self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_POST)
         return self
@@ -508,7 +509,7 @@ class JsonApiResourceViewBuilder:
                     "next": None if page == pages or pages <= 1 else f"/api/{self._resource_name}?page_number={page + 1}",
                     "previous": None if page <= 1 else f"/api/{self._resource_name}?page_number={page - 1}",
                 }, 'data': [
-                    {'id': getattr(item, self._unique_identifier, None), 'type': self._resource_name,
+                    {'id': item.get(self._unique_identifier, None), 'type': self._resource_name,
                      'attributes': item} for
                     item in data], 'meta': {
                     'pagination': {
@@ -524,7 +525,7 @@ class JsonApiResourceViewBuilder:
 
             if self._on_get_callback is not None:
                 data, status = self._on_get_callback(request, identifier, *args, **kwargs)
-                return Response(data={'type': self._resource_name, 'attributes': data}, status=status)
+                return Response(data={'id': identifier, 'type': self._resource_name, 'attributes': data}, status=status)
 
         view_set = type(f'{self._resource_name}JSONApiActionViewSet', (ViewSet,), {
             'renderer_classes': (JSONRenderer, BrowsableAPIRenderer),
