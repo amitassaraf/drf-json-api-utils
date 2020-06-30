@@ -1,3 +1,4 @@
+import json
 import math
 from copy import deepcopy
 from functools import partial
@@ -485,15 +486,17 @@ class JsonApiResourceViewBuilder:
                 return Response(data={}, status=status)
 
         def update(view, request, *args, **kwargs):
+            data = json.loads(request.body).get('data', {})
             identifier = kwargs.get(self._unique_identifier, None)
 
             if self._on_update_callback is not None:
-                data, status = self._on_update_callback(request, identifier, *args, **kwargs)
+                data, status = self._on_update_callback(request, identifier, data, *args, **kwargs)
                 return Response(data={'id': identifier, 'type': self._resource_name, 'attributes': data}, status=status)
 
         def create(view, request, *args, **kwargs):
+            data = json.loads(request.body).get('data', {})
             if self._on_create_callback is not None:
-                data, identifier, status = self._on_create_callback(request, *args, **kwargs)
+                data, identifier, status = self._on_create_callback(request, data, *args, **kwargs)
                 return Response(
                     data={'id': identifier, 'type': self._resource_name, 'attributes': data}, status=status)
 
@@ -527,7 +530,23 @@ class JsonApiResourceViewBuilder:
                 data, status = self._on_get_callback(request, identifier, *args, **kwargs)
                 return Response(data={'id': identifier, 'type': self._resource_name, 'attributes': data}, status=status)
 
-        view_set = type(f'{self._resource_name}JSONApiActionViewSet', (ViewSet,), {
+        patch_view_set = type(f'{self._resource_name}ChangeJSONApiActionViewSet', (ViewSet,), {
+            'renderer_classes': (JSONRenderer, BrowsableAPIRenderer),
+            'parser_classes': (JSONParser, FormParser, MultiPartParser),
+            'metadata_class': JSONAPIMetadata,
+            'pagination_class': LimitedJsonApiPageNumberPagination,
+            'filter_backends': (
+                QueryParameterValidationFilter, OrderingFilter, JsonApiSearchFilter),
+            'resource_name': self._resource_name,
+            'http_method_names': list(map(lambda method: method.lower(), self._allowed_methods)) + ['head', 'options'],
+            'permission_classes': self._permission_classes,
+            'authentication_classes': self._authentication_classes,
+            'create': create,
+            'update': update,
+            'destroy': destroy
+        })
+
+        get_view_set = type(f'{self._resource_name}RetrieveJSONApiActionViewSet', (ViewSet,), {
             'renderer_classes': (JSONRenderer, BrowsableAPIRenderer),
             'parser_classes': (JSONParser, FormParser, MultiPartParser),
             'metadata_class': JSONAPIMetadata,
@@ -538,9 +557,6 @@ class JsonApiResourceViewBuilder:
             'http_method_names': list(map(lambda method: method.lower(), self._allowed_methods)) + ['head', 'options'],
             'permission_classes': self._permission_classes,
             'authentication_classes': self._authentication_classes,
-            'create': create,
-            'update': update,
-            'destroy': destroy,
             'list': _list,
             'get': get
         })
@@ -553,15 +569,21 @@ class JsonApiResourceViewBuilder:
         if len(url_resource_name) == 0:
             url_resource_name = self._resource_name
 
+
         urls.extend([
             url(rf'^{urls_prefix}{url_resource_name}{urls_suffix}$',
-                view_set.as_view({'post': 'create', 'get': 'list'},
-                                 name=f'list_{self._resource_name}'),
-                name=f'{self._resource_name}-action'),
+                get_view_set.as_view({'get': 'list'}, name=f'list_{self._resource_name}'),
+                name=f'list-{self._resource_name}-action'),
+            url(rf'^{urls_prefix}{url_resource_name}{urls_suffix}$',
+                patch_view_set.as_view({'post': 'create'}, name=f'create_{self._resource_name}'),
+                name=f'post-{self._resource_name}-action'),
             url(rf'^{urls_prefix}{url_resource_name}{urls_suffix}/(?P<{self._unique_identifier}>[^/.]+)/$',
-                view_set.as_view({'patch': 'update', 'delete': 'destroy', 'get': 'get'},
-                                 name=f'retrieve_{self._resource_name}'),
-                name=f'{self._resource_name}-action')
+                patch_view_set.as_view({'patch': 'update', 'delete': 'destroy'},
+                                       name=f'patch_destroy_{self._resource_name}'),
+                name=f'patch-delete-{self._resource_name}-action'),
+            url(rf'^{urls_prefix}{url_resource_name}{urls_suffix}/(?P<{self._unique_identifier}>[^/.]+)/$',
+                get_view_set.as_view({'get': 'get'},  name=f'get_{self._resource_name}'),
+                name=f'get-{self._resource_name}-action')
         ])
         return urls
 
