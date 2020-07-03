@@ -541,9 +541,9 @@ class JsonApiResourceViewBuilder:
             'http_method_names': list(map(lambda method: method.lower(), self._allowed_methods)) + ['head', 'options'],
             'permission_classes': self._permission_classes,
             'authentication_classes': self._authentication_classes,
-            'create': create,
             'update': update,
-            'destroy': destroy
+            'destroy': destroy,
+            'get': get
         })
 
         get_view_set = type(f'{self._resource_name}RetrieveJSONApiActionViewSet', (ViewSet,), {
@@ -558,7 +558,7 @@ class JsonApiResourceViewBuilder:
             'permission_classes': self._permission_classes,
             'authentication_classes': self._authentication_classes,
             'list': _list,
-            'get': get
+            'create': create,
         })
 
         urls = []
@@ -572,18 +572,12 @@ class JsonApiResourceViewBuilder:
 
         urls.extend([
             url(rf'^{urls_prefix}{url_resource_name}{urls_suffix}$',
-                get_view_set.as_view({'get': 'list'}, name=f'list_{self._resource_name}'),
+                get_view_set.as_view({'get': 'list', 'post': 'create'}, name=f'list_{self._resource_name}'),
                 name=f'list-{self._resource_name}-action'),
-            url(rf'^{urls_prefix}{url_resource_name}{urls_suffix}$',
-                patch_view_set.as_view({'post': 'create'}, name=f'create_{self._resource_name}'),
-                name=f'post-{self._resource_name}-action'),
             url(rf'^{urls_prefix}{url_resource_name}{urls_suffix}/(?P<{self._unique_identifier}>[^/.]+)/$',
-                patch_view_set.as_view({'patch': 'update', 'delete': 'destroy'},
+                patch_view_set.as_view({'get': 'get', 'patch': 'update', 'delete': 'destroy'},
                                        name=f'patch_destroy_{self._resource_name}'),
-                name=f'patch-delete-{self._resource_name}-action'),
-            url(rf'^{urls_prefix}{url_resource_name}{urls_suffix}/(?P<{self._unique_identifier}>[^/.]+)/$',
-                get_view_set.as_view({'get': 'get'},  name=f'get_{self._resource_name}'),
-                name=f'get-{self._resource_name}-action')
+                name=f'patch-delete-{self._resource_name}-action')
         ])
         return urls
 
