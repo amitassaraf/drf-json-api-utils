@@ -63,6 +63,7 @@ class JsonApiModelViewBuilder:
         self._after_update_callback = None
         self._before_delete_callback = None
         self._after_delete_callback = None
+        self._before_list_callback = None
         self._after_list_callback = None
         if queryset is None:
             self._queryset = self._model.objects
@@ -215,6 +216,11 @@ class JsonApiModelViewBuilder:
         self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_DELETE)
         return self
 
+    def before_list(self, before_list_callback: Callable[[QuerySet], QuerySet] = None) -> 'JsonApiModelViewBuilder':
+        self._before_list_callback = before_list_callback
+        self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_GET)
+        return self
+
     def after_list(self, after_list_callback: Callable[[Any], Any] = None) -> 'JsonApiModelViewBuilder':
         self._after_list_callback = after_list_callback
         self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_GET)
@@ -318,8 +324,20 @@ class JsonApiModelViewBuilder:
             if self._after_update_callback is not None:
                 self._after_update_callback(instance, serializer)
 
-        def perform_list(view, *args, **kwargs):
-            response = super(view.__class__, view).list(*args, **kwargs)
+        def perform_list(view, request, *args, **kwargs):
+            queryset = view.filter_queryset(view.get_queryset())
+
+            if self._before_list_callback is not None:
+                queryset = self._before_list_callback(queryset)
+
+            page = view.paginate_queryset(queryset)
+            if page is not None:
+                serializer = view.get_serializer(page, many=True)
+                response = view.get_paginated_response(serializer.data)
+            else:
+                serializer = view.get_serializer(queryset, many=True)
+                response = Response(serializer.data)
+
             if self._after_list_callback is not None:
                 response.data = self._after_list_callback(response.data)
             return response
@@ -568,7 +586,6 @@ class JsonApiResourceViewBuilder:
 
         if len(url_resource_name) == 0:
             url_resource_name = self._resource_name
-
 
         urls.extend([
             url(rf'^{urls_prefix}{url_resource_name}{urls_suffix}$',
