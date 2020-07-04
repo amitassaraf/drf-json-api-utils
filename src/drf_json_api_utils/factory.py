@@ -216,7 +216,8 @@ class JsonApiModelViewBuilder:
         self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_DELETE)
         return self
 
-    def before_list(self, before_list_callback: Callable[[QuerySet], QuerySet] = None) -> 'JsonApiModelViewBuilder':
+    def before_list(self,
+                    before_list_callback: Callable[[Request, QuerySet], QuerySet] = None) -> 'JsonApiModelViewBuilder':
         self._before_list_callback = before_list_callback
         self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_GET)
         return self
@@ -328,7 +329,7 @@ class JsonApiModelViewBuilder:
             queryset = view.filter_queryset(view.get_queryset())
 
             if self._before_list_callback is not None:
-                queryset = self._before_list_callback(queryset)
+                queryset = self._before_list_callback(request, queryset)
 
             page = view.paginate_queryset(queryset)
             if page is not None:
