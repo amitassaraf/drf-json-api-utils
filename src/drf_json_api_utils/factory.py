@@ -305,7 +305,7 @@ class JsonApiModelViewBuilder:
         def perform_create(view, serializer):
             instance = serializer.save()
             if self._after_create_callback is not None:
-                self._after_create_callback(instance, serializer)
+                self._after_create_callback(view.context['request'], instance, serializer)
 
         def perform_destroy(view, instance):
             if self._before_delete_callback is not None:
@@ -323,7 +323,7 @@ class JsonApiModelViewBuilder:
         def perform_update(view, serializer):
             instance = serializer.save()
             if self._after_update_callback is not None:
-                self._after_update_callback(instance, serializer)
+                self._after_update_callback(view.context['request'], instance, serializer)
 
         def perform_list(view, request, *args, **kwargs):
             queryset = view.filter_queryset(view.get_queryset())
@@ -608,14 +608,18 @@ def json_api_view(resource_name: str,
                   permission_classes: Optional[Sequence[Type[BasePermission]]] = None,
                   authentication_classes: Optional[Sequence[Type[BaseAuthentication]]] = None,
                   urls_prefix: str = '',
-                  urls_suffix: str = '', ) -> FunctionType:
+                  urls_suffix: str = '',
+                  multiple_resource = True) -> FunctionType:
     def decorator(func: Callable[[Request], Tuple[Dict, int]]):
         builder = JsonApiResourceViewBuilder(action_name=resource_name,
                                              allowed_methods=[method],
                                              permission_classes=permission_classes,
                                              authentication_classes=authentication_classes)
-        if method == json_api_spec_http_methods.HTTP_GET:
+        if method == json_api_spec_http_methods.HTTP_GET and multiple_resource:
             return builder.on_list(list_callback=func) \
+                .get_urls(urls_prefix=urls_prefix, urls_suffix=urls_suffix)
+        elif method == json_api_spec_http_methods.HTTP_GET:
+            return builder.on_get(get_callback=func) \
                 .get_urls(urls_prefix=urls_prefix, urls_suffix=urls_suffix)
         elif method == json_api_spec_http_methods.HTTP_POST:
             return builder.on_create(create_callback=func) \
