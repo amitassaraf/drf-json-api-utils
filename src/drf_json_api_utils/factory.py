@@ -591,12 +591,12 @@ class JsonApiResourceViewBuilder:
 
         urls.extend([
             url(rf'^{urls_prefix}{url_resource_name}{urls_suffix}$',
-                get_view_set.as_view({'get': 'list', 'post': 'create'}, name=f'list-{self._resource_name}'),
-                name=f'list-{self._resource_name}-action'),
+                get_view_set.as_view({'get': 'list', 'post': 'create'}, name=f'list_{self._resource_name}'),
+                name=f'list-{self._resource_name}'),
             url(rf'^{urls_prefix}{url_resource_name}{urls_suffix}/(?P<{self._unique_identifier}>[^/.]+)/$',
                 patch_view_set.as_view({'get': 'get', 'patch': 'update', 'delete': 'destroy'},
-                                       name=f'patch-destroy-{self._resource_name}'),
-                name=f'patch-delete-{self._resource_name}-action')
+                                       name=f'get_{self._resource_name}'),
+                name=f'{self._resource_name}-detail')
         ])
         return urls
 
