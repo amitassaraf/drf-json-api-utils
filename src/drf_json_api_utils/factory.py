@@ -8,6 +8,7 @@ from typing import Type, Tuple, Sequence, Dict, Callable, Any, Optional, List
 from django.apps import apps
 from django.conf.urls import url
 from django.db.models import QuerySet, Model
+from rest_framework import status
 from rest_framework.authentication import BaseAuthentication
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import BasePermission
@@ -305,7 +306,7 @@ class JsonApiModelViewBuilder:
         def perform_create(view, serializer):
             instance = serializer.save()
             if self._after_create_callback is not None:
-                self._after_create_callback(view.context['request'], instance, serializer)
+                self._after_create_callback(view.request, instance, serializer)
 
         def perform_destroy(view, instance):
             if self._before_delete_callback is not None:
@@ -323,7 +324,7 @@ class JsonApiModelViewBuilder:
         def perform_update(view, serializer):
             instance = serializer.save()
             if self._after_update_callback is not None:
-                self._after_update_callback(view.context['request'], instance, serializer)
+                self._after_update_callback(view.request, instance, serializer)
 
         def perform_list(view, request, *args, **kwargs):
             queryset = view.filter_queryset(view.get_queryset())
@@ -590,11 +591,11 @@ class JsonApiResourceViewBuilder:
 
         urls.extend([
             url(rf'^{urls_prefix}{url_resource_name}{urls_suffix}$',
-                get_view_set.as_view({'get': 'list', 'post': 'create'}, name=f'list_{self._resource_name}'),
+                get_view_set.as_view({'get': 'list', 'post': 'create'}, name=f'list-{self._resource_name}'),
                 name=f'list-{self._resource_name}-action'),
             url(rf'^{urls_prefix}{url_resource_name}{urls_suffix}/(?P<{self._unique_identifier}>[^/.]+)/$',
                 patch_view_set.as_view({'get': 'get', 'patch': 'update', 'delete': 'destroy'},
-                                       name=f'patch_destroy_{self._resource_name}'),
+                                       name=f'patch-destroy-{self._resource_name}'),
                 name=f'patch-delete-{self._resource_name}-action')
         ])
         return urls
