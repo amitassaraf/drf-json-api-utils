@@ -453,9 +453,11 @@ class JsonApiResourceViewBuilder:
                  unique_identifier: Optional[str] = 'id',
                  allowed_methods=json_api_spec_http_methods.HTTP_ACTIONS,
                  permission_classes: Sequence[Type[BasePermission]] = None,
-                 authentication_classes: Sequence[Type[BaseAuthentication]] = None):
+                 authentication_classes: Sequence[Type[BaseAuthentication]] = None,
+                 raw_items=False):
         self._allowed_methods = [*allowed_methods]
         self._resource_name = action_name
+        self._raw_items = not raw_items
         self._unique_identifier = unique_identifier
         self._permission_classes = permission_classes or []
         self._authentication_classes = authentication_classes or []
@@ -511,14 +513,19 @@ class JsonApiResourceViewBuilder:
 
             if self._on_update_callback is not None:
                 data, status = self._on_update_callback(request, identifier, data, *args, **kwargs)
-                return Response(data={'id': identifier, 'type': self._resource_name, 'attributes': data}, status=status)
+                if self._raw_items:
+                    return Response(data={'id': identifier, 'type': self._resource_name, 'attributes': data},
+                                    status=status)
+                return Response(data=data, status=status)
 
         def create(view, request, *args, **kwargs):
             data = json.loads(request.body).get('data', {})
             if self._on_create_callback is not None:
                 data, identifier, status = self._on_create_callback(request, data, *args, **kwargs)
-                return Response(
-                    data={'id': identifier, 'type': self._resource_name, 'attributes': data}, status=status)
+                if self._raw_items:
+                    return Response(data={'id': identifier, 'type': self._resource_name, 'attributes': data},
+                                    status=status)
+                return Response(data=data, status=status)
 
         def _list(view, request, *args, **kwargs):
             params = request.query_params
@@ -533,7 +540,7 @@ class JsonApiResourceViewBuilder:
                     "previous": None if page <= 1 else f"/api/{self._resource_name}?page_number={page - 1}",
                 }, 'data': [
                     {'id': item.get(self._unique_identifier, None), 'type': self._resource_name,
-                     'attributes': item} for
+                     'attributes': item} if self._raw_items else item for
                     item in data], 'meta': {
                     'pagination': {
                         "page": page,
@@ -548,7 +555,10 @@ class JsonApiResourceViewBuilder:
 
             if self._on_get_callback is not None:
                 data, status = self._on_get_callback(request, identifier, *args, **kwargs)
-                return Response(data={'id': identifier, 'type': self._resource_name, 'attributes': data}, status=status)
+                if self._raw_items:
+                    return Response(data={'id': identifier, 'type': self._resource_name, 'attributes': data},
+                                    status=status)
+                return Response(data=data, status=status)
 
         patch_view_set = type(f'{self._resource_name}ChangeJSONApiActionViewSet', (ViewSet,), {
             'renderer_classes': (JSONRenderer, BrowsableAPIRenderer),
