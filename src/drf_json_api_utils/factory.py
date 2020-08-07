@@ -1,5 +1,7 @@
+import ast
 import json
 import math
+import re
 from copy import deepcopy
 from functools import partial
 from types import FunctionType
@@ -8,7 +10,6 @@ from typing import Type, Tuple, Sequence, Dict, Callable, Any, Optional, List
 from django.apps import apps
 from django.conf.urls import url
 from django.db.models import QuerySet, Model
-from rest_framework import status
 from rest_framework.authentication import BaseAuthentication
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import BasePermission
@@ -29,6 +30,26 @@ from .common import LimitedJsonApiPageNumberPagination, JsonApiSearchFilter, LOG
 from .constructors import _construct_serializer, _construct_filter_backend
 from .namespace import _append_to_namespace, _RESOURCE_NAME_TO_SPICE, _MODEL_TO_SERIALIZERS
 from .types import CustomField, Filter, Relation, GenericRelation, ComputedFilter
+
+FILTER_REGEX = re.compile(r'filter\[(?P<field>[\w_\-]+)(?P<op>\.[\w_\-]+)?\]', re.IGNORECASE)
+FILTER_MAP = {
+    'is_null': 'is_null',
+    'is_not_null': 'is_not_null',
+    'eq': '==',
+    'ne': '!=',
+    'gt': '>',
+    'lt': '<',
+    'gte': '>=',
+    'gle': '<=',
+    'contains': 'like',
+    'icontains': 'ilike',
+    'not_icontains': 'not_ilike',
+    'not_contains': 'not_like',
+    'in': 'in',
+    'not_in': 'not_in',
+    'any': 'any',
+    'not_any': 'not_any',
+}
 
 
 class JsonApiModelViewBuilder:
@@ -489,7 +510,7 @@ class JsonApiResourceViewBuilder:
         self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_DELETE)
         return self
 
-    def on_list(self, list_callback: Callable[[Request], Tuple[List, int, int]] = None) -> 'JsonApiResourceViewBuilder':
+    def on_list(self, list_callback: Callable[[Request], Tuple[List, List, int, int]] = None) -> 'JsonApiResourceViewBuilder':
         self._on_list_callback = list_callback
         self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_GET)
         return self
@@ -529,9 +550,18 @@ class JsonApiResourceViewBuilder:
 
         def _list(view, request, *args, **kwargs):
             params = request.query_params
+            filters = []
+            for key, value in params.items():
+                match = FILTER_REGEX.match(key)
+                if match:
+                    filters.append({'field': match.groupdict()['field'],
+                                    'op': FILTER_MAP.get(match.groupdict()['op'], '=='),
+                                    'value': ast.literal_eval(value)})
             page = params.get('page_number', 1)
+            include = params.get('include', '')
+            includes = include.split(',')
             if self._on_list_callback is not None:
-                data, count, status = self._on_list_callback(request, page, *args, **kwargs)
+                data, included, count, status = self._on_list_callback(request, page, filters, includes, *args, **kwargs)
                 pages = math.ceil(count / 50)
                 return Response(data={'links': {
                     "first": f"/api/{self._resource_name}?page_number=1",
@@ -541,7 +571,9 @@ class JsonApiResourceViewBuilder:
                 }, 'data': [
                     {'id': item.get(self._unique_identifier, None), 'type': self._resource_name,
                      'attributes': item} if self._raw_items else item for
-                    item in data], 'meta': {
+                    item in data],
+                    'included': included if included else [],
+                    'meta': {
                     'pagination': {
                         "page": page,
                         "pages": pages,
@@ -571,9 +603,9 @@ class JsonApiResourceViewBuilder:
             'http_method_names': list(map(lambda method: method.lower(), self._allowed_methods)) + ['head', 'options'],
             'permission_classes': self._permission_classes,
             'authentication_classes': self._authentication_classes,
-            'update': update,
-            'destroy': destroy,
-            'get': get
+            'update': update if self._on_update_callback else None,
+            'destroy': destroy if self._on_delete_callback else None,
+            'get': get if self._on_get_callback else None
         })
 
         get_view_set = type(f'{self._resource_name}RetrieveJSONApiActionViewSet', (ViewSet,), {
@@ -587,8 +619,8 @@ class JsonApiResourceViewBuilder:
             'http_method_names': list(map(lambda method: method.lower(), self._allowed_methods)) + ['head', 'options'],
             'permission_classes': self._permission_classes,
             'authentication_classes': self._authentication_classes,
-            'list': _list,
-            'create': create,
+            'list': _list if self._on_list_callback else None,
+            'create': create if self._on_create_callback else None,
         })
 
         urls = []
@@ -620,7 +652,7 @@ def json_api_view(resource_name: str,
                   authentication_classes: Optional[Sequence[Type[BaseAuthentication]]] = None,
                   urls_prefix: str = '',
                   urls_suffix: str = '',
-                  multiple_resource = True) -> FunctionType:
+                  multiple_resource=True) -> FunctionType:
     def decorator(func: Callable[[Request], Tuple[Dict, int]]):
         builder = JsonApiResourceViewBuilder(action_name=resource_name,
                                              allowed_methods=[method],
