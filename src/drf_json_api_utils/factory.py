@@ -540,7 +540,8 @@ class JsonApiResourceViewBuilder:
                 return Response(data=data, status=status)
 
         def create(view, request, *args, **kwargs):
-            data = json.loads(request.body).get('data', {})
+            data = json.loads(request.body).get('data', {}) \
+                if 'multipart' not in request.content_type else request.body
             if self._on_create_callback is not None:
                 data, identifier, status = self._on_create_callback(request, data, *args, **kwargs)
                 if self._raw_items:
