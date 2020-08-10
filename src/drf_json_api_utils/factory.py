@@ -560,7 +560,7 @@ class JsonApiResourceViewBuilder:
                                     'value': ast.literal_eval(value)})
             page = params.get('page_number', 1)
             include = params.get('include', '')
-            includes = include.split(',')
+            includes = include.split(',') if include else []
             if self._on_list_callback is not None:
                 data, included, count, status = self._on_list_callback(request, page, filters, includes, *args, **kwargs)
                 pages = math.ceil(count / 50)
