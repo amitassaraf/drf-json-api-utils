@@ -131,6 +131,21 @@ class AlchemyJsonApiViewBuilder:
         self._computed_filters[name] = AlchemyComputedFilter(name=name, filter_func=filter_func)
         return self
 
+    def _get_history_urls(self) -> Sequence[partial]:
+        history_builder = deepcopy(self)
+        if plugins.AUTO_ADMIN_VIEWS not in history_builder._skip_plugins:
+            history_builder._skip_plugins = [plugins.DJANGO_SIMPLE_HISTORY]
+        else:
+            history_builder._skip_plugins = [plugins.DJANGO_SIMPLE_HISTORY, plugins.AUTO_ADMIN_VIEWS]
+        history_builder._model = self._model()._history_cls
+        history_builder._base_query = self._model()._history_cls.objects.query()
+        history_builder._resource_name = f'historical_{self._resource_name}'
+
+        history_builder._fields.extend(['version', 'changed'])
+        history_urls = history_builder.get_urls(urls_prefix='history/', url_resource_name=self._resource_name)
+
+        return history_urls
+
     def _get_admin_urls(self) -> Sequence[partial]:
         admin_builder = deepcopy(self)
         admin_builder._skip_plugins = [plugins.AUTO_ADMIN_VIEWS]
@@ -173,7 +188,7 @@ class AlchemyJsonApiViewBuilder:
             if self._after_get_callback:
                 obj = self._after_get_callback(request, obj)
 
-            return schema.dump(obj).data, HTTP_200_OK
+            return {'data': schema.dump(obj).data}, HTTP_200_OK
 
         def object_list(request, page, filters=None, includes=None, *args, **kwargs) -> Tuple[List, List, int, int]:
             permitted_query = permitted_objects(request, base_query)
@@ -259,7 +274,7 @@ class AlchemyJsonApiViewBuilder:
 
             obj.refresh_from_db()
 
-            return {'type': self._resource_name, 'id': obj.id, 'attributes': schema.dump(obj).data}, obj.id, \
+            return {'data': {'type': self._resource_name, 'id': obj.id, 'attributes': schema.dump(obj).data}}, obj.id, \
                    HTTP_201_CREATED
 
         def object_update(request, identifier, data, *args, **kwargs) -> Tuple[Dict, int]:
@@ -282,7 +297,8 @@ class AlchemyJsonApiViewBuilder:
 
             obj.refresh_from_db()
 
-            return {'type': self._resource_name, 'id': identifier, 'attributes': schema.dump(obj).data}, HTTP_200_OK
+            return {'data': {'type': self._resource_name, 'id': identifier,
+                             'attributes': schema.dump(obj).data}}, HTTP_200_OK
 
         def object_delete(request, identifier, *args, **kwargs) -> Tuple[int]:
             permitted_query = permitted_objects(request, base_query)
@@ -316,6 +332,9 @@ class AlchemyJsonApiViewBuilder:
             builder = builder.on_delete(delete_callback=object_delete)
 
         urls = builder.get_urls(urls_prefix=urls_prefix, url_resource_name=url_resource_name)
+
+        # if plugins.DJANGO_SIMPLE_HISTORY not in self._skip_plugins:
+        #     urls.extend(self._get_history_urls())
 
         if plugins.AUTO_ADMIN_VIEWS not in self._skip_plugins:
             urls.extend(self._get_admin_urls())
