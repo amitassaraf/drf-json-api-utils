@@ -1,7 +1,5 @@
 from typing import Type, Sequence, Tuple, Dict, List, Optional, Callable, Any
 
-from drf_json_api_utils import json_api_spec_http_methods, JsonApiResourceViewBuilder
-from drf_json_api_utils.sql_alchemy.constructors import auto_construct_schema, AlchemyRelation
 from rest_framework.authentication import BaseAuthentication
 from rest_framework.permissions import BasePermission
 from rest_framework.request import Request
@@ -10,6 +8,9 @@ from sqlalchemy.orm import Query
 from sqlalchemy_filters import apply_filters
 from sqlalchemy_filters import apply_pagination
 
+from drf_json_api_utils import json_api_spec_http_methods, JsonApiResourceViewBuilder
+from drf_json_api_utils.sql_alchemy.constructors import auto_construct_schema, AlchemyRelation
+from drf_json_api_utils.sql_alchemy.types import AlchemyComputedFilter
 from .namespace import _TYPE_TO_SCHEMA
 from ..common import LOGGER
 
@@ -50,6 +51,7 @@ class AlchemyJsonApiViewBuilder:
         self._before_list_callback = None
         self._after_list_callback = None
         self._relations = []
+        self._computed_filters = {}
 
     def __warn_if_method_not_available(self, method: str):
         if method not in self._allowed_methods:
@@ -113,6 +115,11 @@ class AlchemyJsonApiViewBuilder:
                                                primary_key=primary_key_name))
         return self
 
+    def add_computed_filter(self, name: str,
+                            filter_func: Callable[[Query, str, str], Query]) -> 'AlchemyJsonApiViewBuilder':
+        self._computed_filters[name] = AlchemyComputedFilter(name=name, filter_func=filter_func)
+        return self
+
     def get_urls(self):
         SchemaType = auto_construct_schema(self._model,
                                            resource_name=self._resource_name,
@@ -144,7 +151,15 @@ class AlchemyJsonApiViewBuilder:
             #  Apply all the filters from the URL
             #
             if filters:
-                filtered_query = apply_filters(permitted_query, filters)
+                filtered_query = permitted_query
+                for filter in filters:
+                    field = filter['field']
+                    if field in self._computed_filters:
+                        copied_filter = dict(filter)
+                        copied_filter.pop('field')
+                        filtered_query = self._computed_filters[field].filter_func(filtered_query, **copied_filter)
+                        filters.remove(filter)
+                filtered_query = apply_filters(filtered_query, filters)
             else:
                 filtered_query = permitted_query
 

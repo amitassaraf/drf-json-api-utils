@@ -1,10 +1,10 @@
-from dataclasses import dataclass
 from typing import Type, Optional, List, Sequence, Callable, Dict
 
 import marshmallow
 from marshmallow_sqlalchemy import ModelConverter, auto_field, SQLAlchemySchema
 from sqlalchemy import Enum
 
+from drf_json_api_utils.sql_alchemy.types import AlchemyRelation
 from .namespace import _TYPE_TO_SCHEMA
 
 
@@ -35,15 +35,6 @@ class ExtendModelConverter(ModelConverter):
         super()._add_column_kwargs(kwargs, column)
         if hasattr(column.type, 'enums'):
             kwargs['column'] = column
-
-
-@dataclass
-class AlchemyRelation:
-    field_name: str
-    model: Type
-    resource_name: str = None
-    many: bool = False
-    primary_key: str = 'id'
 
 
 def auto_construct_schema(alchemy_model: Type,
@@ -78,10 +69,16 @@ def auto_construct_schema(alchemy_model: Type,
             if isinstance(item, (dict,)):
                 for relation in support_relations:
                     if relation.field_name in item:
-                        id = item[relation.field_name]
-                        relationships[relation.field_name] = {
-                            'type': relation.resource_name or relation.model.__tablename__, 'id': id} if item[
-                            relation.field_name] else None
+                        id_or_ids = item[relation.field_name]
+                        if isinstance(id_or_ids, (list, tuple,)):
+                            relationships[relation.field_name] = [{
+                                'type': relation.resource_name or relation.model.__tablename__, 'id': item} for item in
+                                id_or_ids]
+                        else:
+                            relationships[relation.field_name] = {
+                                'type': relation.resource_name or relation.model.__tablename__, 'id': id_or_ids} if \
+                                item[
+                                    relation.field_name] else None
                         del item[relation.field_name]
                 item['relationships'] = relationships
         return result
