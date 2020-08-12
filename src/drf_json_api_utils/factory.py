@@ -251,7 +251,10 @@ class JsonApiModelViewBuilder:
 
     def _get_history_urls(self) -> Sequence[partial]:
         history_builder = deepcopy(self)
-        history_builder._skip_plugins = [plugins.DJANGO_SIMPLE_HISTORY, plugins.AUTO_ADMIN_VIEWS]
+        if plugins.AUTO_ADMIN_VIEWS not in history_builder._skip_plugins:
+            history_builder._skip_plugins = [plugins.DJANGO_SIMPLE_HISTORY]
+        else:
+            history_builder._skip_plugins = [plugins.DJANGO_SIMPLE_HISTORY, plugins.AUTO_ADMIN_VIEWS]
         history_builder._model = apps.get_model(self._model.objects.model._meta.db_table.split('_')[0],
                                                 f'Historical{self._model.__name__}')
         history_builder._queryset = self._model.history
