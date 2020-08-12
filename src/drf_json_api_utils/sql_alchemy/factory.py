@@ -131,21 +131,6 @@ class AlchemyJsonApiViewBuilder:
         self._computed_filters[name] = AlchemyComputedFilter(name=name, filter_func=filter_func)
         return self
 
-    def _get_history_urls(self) -> Sequence[partial]:
-        history_builder = deepcopy(self)
-        if plugins.AUTO_ADMIN_VIEWS not in history_builder._skip_plugins:
-            history_builder._skip_plugins = [plugins.DJANGO_SIMPLE_HISTORY]
-        else:
-            history_builder._skip_plugins = [plugins.DJANGO_SIMPLE_HISTORY, plugins.AUTO_ADMIN_VIEWS]
-        history_builder._model = self._model()._history_cls
-        history_builder._base_query = self._model()._history_cls.objects.query()
-        history_builder._resource_name = f'historical_{self._resource_name}'
-
-        history_builder._fields.extend(['version', 'changed'])
-        history_urls = history_builder.get_urls(urls_prefix='history/', url_resource_name=self._resource_name)
-
-        return history_urls
-
     def _get_admin_urls(self) -> Sequence[partial]:
         admin_builder = deepcopy(self)
         admin_builder._skip_plugins = [plugins.AUTO_ADMIN_VIEWS]
@@ -332,9 +317,6 @@ class AlchemyJsonApiViewBuilder:
             builder = builder.on_delete(delete_callback=object_delete)
 
         urls = builder.get_urls(urls_prefix=urls_prefix, url_resource_name=url_resource_name)
-
-        # if plugins.DJANGO_SIMPLE_HISTORY not in self._skip_plugins:
-        #     urls.extend(self._get_history_urls())
 
         if plugins.AUTO_ADMIN_VIEWS not in self._skip_plugins:
             urls.extend(self._get_admin_urls())
