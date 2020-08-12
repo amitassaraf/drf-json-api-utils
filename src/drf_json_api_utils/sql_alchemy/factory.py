@@ -237,7 +237,7 @@ class AlchemyJsonApiViewBuilder:
             attributes = data['attributes']
 
             if self._before_update_callback:
-                attributes = self._before_update_callback(request, obj, attributes)
+                attributes = self._before_update_callback(request, attributes, obj)
 
             for field in self._fields:
                 if field != identifier:
