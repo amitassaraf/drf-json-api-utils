@@ -35,7 +35,9 @@ class AlchemyJsonApiViewBuilder:
                  page_size: Optional[int] = 50,
                  skip_plugins: Optional[Sequence[str]] = None,
                  include_plugins: Optional[Sequence[str]] = None,
-                 plugin_options: Optional[Dict[str, Any]] = None):
+                 plugin_options: Optional[Dict[str, Any]] = None,
+                 custom_field_handlers: Optional[Dict[Type, Callable]] = None):
+        self._custom_field_handlers = custom_field_handlers
         self._model = alchemy_model
         self._resource_name = resource_name
         self._fields = fields
@@ -154,7 +156,8 @@ class AlchemyJsonApiViewBuilder:
             SchemaType = auto_construct_schema(self._model,
                                                resource_name=self._resource_name,
                                                fields=self._fields,
-                                               support_relations=self._relations)
+                                               support_relations=self._relations,
+                                               custom_field_handlers=self._custom_field_handlers)
         schema = SchemaType()
         schema_many = SchemaType(many=True)
 
