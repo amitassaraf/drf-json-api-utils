@@ -2,10 +2,12 @@ from copy import deepcopy
 from functools import partial
 from typing import Type, Sequence, Tuple, Dict, List, Optional, Callable, Any
 
+from django.http import Http404
 from rest_framework.authentication import BaseAuthentication
 from rest_framework.permissions import BasePermission
 from rest_framework.request import Request
-from rest_framework.status import HTTP_200_OK, HTTP_201_CREATED, HTTP_204_NO_CONTENT
+from rest_framework.status import HTTP_200_OK, HTTP_201_CREATED, HTTP_204_NO_CONTENT, HTTP_404_NOT_FOUND
+from sqlalchemy.exc import StatementError
 from sqlalchemy.orm import Query
 from sqlalchemy_filters import apply_filters
 from sqlalchemy_filters import apply_pagination
@@ -171,7 +173,15 @@ class AlchemyJsonApiViewBuilder:
         def object_get(request, identifier, *args, **kwargs) -> Tuple[Dict, int]:
             permitted_query = permitted_objects(request, base_query)
 
-            obj = permitted_query.filter(**{self._primary_key or 'id': identifier}).get()
+            obj = None
+
+            try:
+                obj = permitted_query.filter_by(**{self._primary_key or 'id': identifier}).first()
+            except StatementError:
+                obj = None
+            finally:
+                if not obj:
+                    return {}, HTTP_404_NOT_FOUND
 
             if self._after_get_callback:
                 obj = self._after_get_callback(request, obj)
