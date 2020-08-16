@@ -19,7 +19,7 @@ class EnumField(marshmallow.fields.Field):
         return field.value if field else field
 
     def deserialize(self, value, attr=None, data=None, **kwargs):
-        field = super(EnumField, self).deserialize(value.value, attr, data)
+        field = super(EnumField, self).deserialize(value, attr, data)
         if isinstance(field, str) and self.column is not None:
             return self.column.type.python_type[field]
         return field
