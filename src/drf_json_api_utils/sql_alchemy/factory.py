@@ -186,7 +186,9 @@ class AlchemyJsonApiViewBuilder:
             if self._after_get_callback:
                 obj = self._after_get_callback(request, obj)
 
-            return {'data': schema.dump(obj).data}, HTTP_200_OK
+            attributes = schema.dump(obj).data
+            attributes.pop(self._primary_key or 'id')
+            return {'id': identifier, 'type': self._resource_name, 'attributes': attributes}, HTTP_200_OK
 
         def object_list(request, page, filters=None, includes=None, *args, **kwargs) -> Tuple[List, List, int, int]:
             permitted_query = permitted_objects(request, base_query)
