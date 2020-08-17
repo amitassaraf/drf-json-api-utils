@@ -1,5 +1,5 @@
 __title__ = 'DRF Json Api Utils'
-__version__ = '1.6.7'
+__version__ = '1.6.8'
 __author__ = 'Amit Assaraf'
 __license__ = 'MIT License'
 __copyright__ = 'Copyright 2020 Amit Assaraf'

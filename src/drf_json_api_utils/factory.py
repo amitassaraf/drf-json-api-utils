@@ -557,10 +557,14 @@ class JsonApiResourceViewBuilder:
             filters = []
             for key, value in params.items():
                 match = FILTER_REGEX.match(key)
+                try:
+                    value = ast.literal_eval(value)
+                except:
+                    pass
                 if match:
                     filters.append({'field': match.groupdict()['field'],
                                     'op': FILTER_MAP.get(match.groupdict()['op'], '=='),
-                                    'value': ast.literal_eval(value)})
+                                    'value': value})
             page = params.get('page_number', 1)
             include = params.get('include', '')
             includes = include.split(',') if include else []
