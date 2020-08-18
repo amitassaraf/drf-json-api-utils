@@ -279,14 +279,24 @@ class AlchemyJsonApiViewBuilder:
 
         def object_update(request, identifier, data, *args, **kwargs) -> Tuple[Dict, int]:
             permitted_query = permitted_objects(request, base_query)
-            obj = permitted_query.filter(**{self._primary_key or 'id': identifier}).get()
+
+            obj = None
+
+            try:
+                obj = permitted_query.filter_by(**{self._primary_key or 'id': identifier}).first()
+            except StatementError:
+                obj = None
+            finally:
+                if not obj:
+                    return {}, HTTP_404_NOT_FOUND
+
             attributes = data['attributes']
 
             if self._before_update_callback:
                 attributes = self._before_update_callback(request, attributes, obj)
 
             for field in self._fields:
-                if field != identifier:
+                if field != identifier and field in attributes:
                     setattr(obj, field, attributes[field])
 
             obj.save()
