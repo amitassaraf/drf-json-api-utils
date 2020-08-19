@@ -1,8 +1,8 @@
+import copy
 from copy import deepcopy
 from functools import partial
 from typing import Type, Sequence, Tuple, Dict, List, Optional, Callable, Any
 
-from django.http import Http404
 from rest_framework.authentication import BaseAuthentication
 from rest_framework.permissions import BasePermission
 from rest_framework.request import Request
@@ -260,28 +260,29 @@ class AlchemyJsonApiViewBuilder:
                 attributes = data
             else:
                 attributes = data['attributes']
-
             if self._before_create_callback:
                 attributes = self._before_create_callback(request, attributes)
 
             unmarshal_obj = schema.load(attributes, session=schema.session)
             obj = unmarshal_obj.data
-            obj.save()
-            obj.refresh_from_db()
+
+            # We need to clone the object and delete the one created by Marshmallow
+            # because of memory management issues
+            new_obj = copy.deepcopy(obj)
+            del obj
+            new_obj.save()
+            new_obj.refresh_from_db()
 
             if self._after_create_callback:
-                self._after_create_callback(request, attributes, obj)
+                self._after_create_callback(request, attributes, new_obj)
+            new_obj.refresh_from_db()
 
-            obj.refresh_from_db()
-
-            return {'data': {'type': self._resource_name, 'id': obj.id, 'attributes': schema.dump(obj).data}}, obj.id, \
-                   HTTP_201_CREATED
+            return {'data': {'type': self._resource_name, 'id': new_obj.id,
+                             'attributes': schema.dump(new_obj).data}}, new_obj.id, HTTP_201_CREATED
 
         def object_update(request, identifier, data, *args, **kwargs) -> Tuple[Dict, int]:
             permitted_query = permitted_objects(request, base_query)
-
             obj = None
-
             try:
                 obj = permitted_query.filter_by(**{self._primary_key or 'id': identifier}).first()
             except StatementError:
@@ -289,26 +290,21 @@ class AlchemyJsonApiViewBuilder:
             finally:
                 if not obj:
                     return {}, HTTP_404_NOT_FOUND
-
             attributes = data['attributes']
-
             if self._before_update_callback:
                 attributes = self._before_update_callback(request, attributes, obj)
-
             for field in self._fields:
                 if field != identifier and field in attributes:
                     setattr(obj, field, attributes[field])
-
-            obj.save()
-            obj.refresh_from_db()
-
+            new_obj = deepcopy(obj)
+            del obj
+            new_obj.save()
+            new_obj.refresh_from_db()
             if self._after_update_callback:
-                self._after_update_callback(request, obj)
-
-            obj.refresh_from_db()
-
+                self._after_update_callback(request, new_obj)
+            new_obj.refresh_from_db()
             return {'data': {'type': self._resource_name, 'id': identifier,
-                             'attributes': schema.dump(obj).data}}, HTTP_200_OK
+                             'attributes': schema.dump(new_obj).data}}, HTTP_200_OK
 
         def object_delete(request, identifier, *args, **kwargs) -> Tuple[int]:
             permitted_query = permitted_objects(request, base_query)
