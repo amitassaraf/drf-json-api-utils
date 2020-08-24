@@ -317,7 +317,7 @@ class AlchemyJsonApiViewBuilder:
 
         def object_delete(request, identifier, *args, **kwargs) -> Tuple[int]:
             permitted_query = permitted_objects(request, base_query)
-            obj = permitted_query.filter_by(**{self._primary_key or 'id': identifier}).get()
+            obj = permitted_query.filter_by(**{self._primary_key or 'id': identifier}).first()
             if self._before_delete_callback:
                 obj = self._before_delete_callback(request, obj)
             if obj:
