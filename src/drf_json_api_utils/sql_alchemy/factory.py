@@ -1,12 +1,13 @@
 import copy
 from copy import deepcopy
 from functools import partial
-from typing import Type, Sequence, Tuple, Dict, List, Optional, Callable, Any
+from typing import Type, Sequence, Tuple, Dict, List, Optional, Callable, Any, Collection
 
 from rest_framework.authentication import BaseAuthentication
 from rest_framework.permissions import BasePermission
 from rest_framework.request import Request
-from rest_framework.status import HTTP_200_OK, HTTP_201_CREATED, HTTP_204_NO_CONTENT, HTTP_404_NOT_FOUND
+from rest_framework.status import HTTP_200_OK, HTTP_201_CREATED, HTTP_204_NO_CONTENT, HTTP_404_NOT_FOUND, \
+    HTTP_400_BAD_REQUEST
 from sqlalchemy.exc import StatementError
 from sqlalchemy.orm import Query
 from sqlalchemy_filters import apply_filters
@@ -168,6 +169,39 @@ class AlchemyJsonApiViewBuilder:
         def default_permitted_objects(request, query):
             return query
 
+        def render_includes(includes, objects):
+
+            #
+            #  Go over all the keys that the user wants to include, and serialize them
+            #
+            rendered_includes = []
+            for include in includes:
+                #  Get the column on the model
+                include_on_model = getattr(self._model, include, None)
+                if include_on_model:
+                    model_property = include_on_model.property
+                    #  Get the primary key of the target relationship table
+                    target_primary_key = model_property.target.primary_key.columns.values()[0].name
+                    #  Get the local foreign key column name that connects the relationship
+                    local_column = model_property.local_columns.copy().pop()
+                    #  Get the Alchemy Model of the target relationship table
+                    target_model = model_property.mapper.class_
+                    #  Check that the item we are targeting has a JSON:API view
+                    if target_model not in _TYPE_TO_SCHEMA:
+                        raise Exception(f'No JSON:API view defined for type {target_model}')
+                    #  Fetch all the related items to be included in the result
+                    to_include = target_model.objects.query().filter(
+                        getattr(target_model, target_primary_key).in_(
+                            [getattr(item, local_column.name) for item in objects])).all()
+                    schema = _TYPE_TO_SCHEMA[target_model]
+                    target_many = schema['serializer'](many=True)
+                    #  Serialize all the included objects to JSON:API
+                    include_result = target_many.json_api_dump(to_include, schema['resource_name'])
+                    rendered_includes.extend(include_result.data)
+                else:
+                    raise Exception(f'Include {include} not supported on type {self._resource_name}')
+            return rendered_includes
+
         permitted_objects = self._permitted_objects or default_permitted_objects
 
         def object_get(request, identifier, *args, **kwargs) -> Tuple[Dict, int]:
@@ -219,35 +253,7 @@ class AlchemyJsonApiViewBuilder:
             #  Fetch the values from DB
             objects = query.all()
 
-            #
-            #  Go over all the keys that the user wants to include, and serialize them
-            #
-            rendered_includes = []
-            for include in includes:
-                #  Get the column on the model
-                include_on_model = getattr(self._model, include, None)
-                if include_on_model:
-                    model_property = include_on_model.property
-                    #  Get the primary key of the target relationship table
-                    target_primary_key = model_property.target.primary_key.columns.values()[0].name
-                    #  Get the local foreign key column name that connects the relationship
-                    local_column = model_property.local_columns.copy().pop()
-                    #  Get the Alchemy Model of the target relationship table
-                    target_model = model_property.mapper.class_
-                    #  Check that the item we are targeting has a JSON:API view
-                    if target_model not in _TYPE_TO_SCHEMA:
-                        raise Exception(f'No JSON:API view defined for type {target_model}')
-                    #  Fetch all the related items to be included in the result
-                    to_include = target_model.objects.query().filter(
-                        getattr(target_model, target_primary_key).in_(
-                            [getattr(item, local_column.name) for item in objects])).all()
-                    schema = _TYPE_TO_SCHEMA[target_model]
-                    target_many = schema['serializer'](many=True)
-                    #  Serialize all the included objects to JSON:API
-                    include_result = target_many.json_api_dump(to_include, schema['resource_name'])
-                    rendered_includes.extend(include_result.data)
-                else:
-                    raise Exception(f'Include {include} not supported on type {self._resource_name}')
+            rendered_includes = render_includes(includes, objects)
 
             if self._after_list_callback:
                 objects = self._after_list_callback(request, objects)
@@ -265,6 +271,9 @@ class AlchemyJsonApiViewBuilder:
 
             unmarshal_obj = schema.load(attributes, session=schema.session)
             obj = unmarshal_obj.data
+
+            if unmarshal_obj.errors:
+                return unmarshal_obj.errors, '', HTTP_400_BAD_REQUEST
 
             # We need to clone the object and delete the one created by Marshmallow
             # because of memory management issues
@@ -308,7 +317,7 @@ class AlchemyJsonApiViewBuilder:
 
         def object_delete(request, identifier, *args, **kwargs) -> Tuple[int]:
             permitted_query = permitted_objects(request, base_query)
-            obj = permitted_query.filter(**{self._primary_key or 'id': identifier}).get()
+            obj = permitted_query.filter_by(**{self._primary_key or 'id': identifier}).get()
             if self._before_delete_callback:
                 obj = self._before_delete_callback(request, obj)
             if obj:
