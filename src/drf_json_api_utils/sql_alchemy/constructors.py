@@ -1,10 +1,12 @@
 from typing import Type, Optional, List, Sequence, Callable, Dict
 
 import marshmallow
+from marshmallow.fields import Function
 from marshmallow_sqlalchemy import ModelConverter, auto_field, SQLAlchemySchema
 from sqlalchemy import Enum
 from sqlalchemy.ext.hybrid import hybrid_property
 
+from drf_json_api_utils import CustomField
 from drf_json_api_utils.sql_alchemy.types import AlchemyRelation
 from .namespace import _TYPE_TO_SCHEMA
 
@@ -39,9 +41,13 @@ def auto_construct_schema(alchemy_model: Type,
                           resource_name: str,
                           fields: Sequence[str],
                           support_relations: Optional[List[AlchemyRelation]] = None,
-                          custom_field_handlers: Optional[Dict[Type, Callable]] = None):
+                          custom_field_handlers: Optional[Dict[Type, Callable]] = None,
+                          custom_fields: Optional[Dict[str, CustomField]] = None):
     if custom_field_handlers is None:
         custom_field_handlers = {}
+
+    if custom_fields is None:
+        custom_fields = {}
 
     if support_relations is None:
         support_relations = []
@@ -95,9 +101,14 @@ def auto_construct_schema(alchemy_model: Type,
             else:
                 additional.append(field)
 
+    generated_custom_fields = {}
+    for name, custom_field in custom_fields.items():
+        generated_custom_fields[name] = Function(custom_field.callback)
+
     new_serializer = type(f'{alchemy_model.__tablename__}Serializer', (SQLAlchemySchema,), {
         'id': marshmallow.fields.String(dump_only=True),
         **generated_fields,
+        **generated_custom_fields,
         'Meta': type('Meta', (), {
             'load_instance': True,
             'include_fk': True,

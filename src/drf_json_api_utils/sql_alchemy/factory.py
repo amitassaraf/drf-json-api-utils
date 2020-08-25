@@ -13,7 +13,7 @@ from sqlalchemy.orm import Query
 from sqlalchemy_filters import apply_filters
 from sqlalchemy_filters import apply_pagination
 
-from drf_json_api_utils import json_api_spec_http_methods, JsonApiResourceViewBuilder, plugins
+from drf_json_api_utils import json_api_spec_http_methods, JsonApiResourceViewBuilder, plugins, CustomField
 from drf_json_api_utils.sql_alchemy.constructors import auto_construct_schema, AlchemyRelation
 from drf_json_api_utils.sql_alchemy.types import AlchemyComputedFilter
 from .namespace import _TYPE_TO_SCHEMA
@@ -61,6 +61,7 @@ class AlchemyJsonApiViewBuilder:
         self._before_list_callback = None
         self._after_list_callback = None
         self._relations = []
+        self._custom_fields = {}
         self._computed_filters = {}
         self._skip_plugins = skip_plugins if skip_plugins is not None else [plugins.AUTO_ADMIN_VIEWS]
         include_plugins = include_plugins or []
@@ -136,6 +137,10 @@ class AlchemyJsonApiViewBuilder:
         self._computed_filters[name] = AlchemyComputedFilter(name=name, filter_func=filter_func)
         return self
 
+    def add_custom_field(self, name: str, instance_callback: Callable[[Any], Any] = None) -> 'AlchemyJsonApiViewBuilder':
+        self._custom_fields[name] = CustomField(name=name, callback=instance_callback)
+        return self
+
     def _get_admin_urls(self) -> Sequence[partial]:
         admin_builder = deepcopy(self)
         admin_builder._skip_plugins = [plugins.AUTO_ADMIN_VIEWS]
@@ -160,7 +165,8 @@ class AlchemyJsonApiViewBuilder:
                                                resource_name=self._resource_name,
                                                fields=self._fields,
                                                support_relations=self._relations,
-                                               custom_field_handlers=self._custom_field_handlers)
+                                               custom_field_handlers=self._custom_field_handlers,
+                                               custom_fields=self._custom_fields)
         schema = SchemaType()
         schema_many = SchemaType(many=True)
 
