@@ -3,6 +3,7 @@ from typing import Type, Optional, List, Sequence, Callable, Dict
 import marshmallow
 from marshmallow_sqlalchemy import ModelConverter, auto_field, SQLAlchemySchema
 from sqlalchemy import Enum
+from sqlalchemy.ext.hybrid import hybrid_property
 
 from drf_json_api_utils.sql_alchemy.types import AlchemyRelation
 from .namespace import _TYPE_TO_SCHEMA
@@ -89,7 +90,7 @@ def auto_construct_schema(alchemy_model: Type,
         if composite_class is not None and composite_class in custom_field_handlers:
             generated_fields[field] = custom_field_handlers[composite_class](field)
         else:
-            if not isinstance(model_field, (property,)):
+            if not isinstance(model_field, (property, hybrid_property)):
                 generated_fields[field] = auto_field()
             else:
                 additional.append(field)
