@@ -274,20 +274,14 @@ class AlchemyJsonApiViewBuilder:
 
             if unmarshal_obj.errors:
                 return unmarshal_obj.errors, '', HTTP_400_BAD_REQUEST
-
-            # We need to clone the object and delete the one created by Marshmallow
-            # because of memory management issues
-            new_obj = copy.deepcopy(obj)
-            del obj
-            new_obj.save()
-            new_obj.refresh_from_db()
+            obj.save()
 
             if self._after_create_callback:
-                self._after_create_callback(request, attributes, new_obj)
-            new_obj.refresh_from_db()
+                self._after_create_callback(request, attributes, obj)
+            obj.refresh_from_db()
 
-            return {'data': {'type': self._resource_name, 'id': new_obj.id,
-                             'attributes': schema.dump(new_obj).data}}, new_obj.id, HTTP_201_CREATED
+            return {'data': {'type': self._resource_name, 'id': obj.id,
+                             'attributes': schema.dump(obj).data}}, obj.id, HTTP_201_CREATED
 
         def object_update(request, identifier, data, *args, **kwargs) -> Tuple[Dict, int]:
             permitted_query = permitted_objects(request, base_query)

@@ -90,7 +90,7 @@ def auto_construct_schema(alchemy_model: Type,
         if composite_class is not None and composite_class in custom_field_handlers:
             generated_fields[field] = custom_field_handlers[composite_class](field)
         else:
-            if not isinstance(model_field, (property, hybrid_property)):
+            if not isinstance(model_field, (property,)) and not model_field.__class__.__name__ == 'hybrid_propertyProxy':
                 generated_fields[field] = auto_field()
             else:
                 additional.append(field)
