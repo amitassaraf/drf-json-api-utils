@@ -310,7 +310,7 @@ class AlchemyJsonApiViewBuilder:
                 self._after_update_callback(request, new_obj)
             new_obj.refresh_from_db()
 
-            dumped_attributes = schema.dump(obj).data
+            dumped_attributes = schema.dump(new_obj).data
             dumped_attributes.pop(self._primary_key or 'id', None)
 
             return {'data': {'type': self._resource_name, 'id': identifier,
