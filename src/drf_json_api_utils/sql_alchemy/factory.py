@@ -1,8 +1,9 @@
-import copy
 from copy import deepcopy
 from functools import partial
-from typing import Type, Sequence, Tuple, Dict, List, Optional, Callable, Any, Collection
+from typing import Type, Sequence, Tuple, Dict, List, Optional, Callable, Any
 
+from marshmallow import INCLUDE
+from marshmallow import ValidationError
 from rest_framework.authentication import BaseAuthentication
 from rest_framework.permissions import BasePermission
 from rest_framework.request import Request
@@ -137,7 +138,8 @@ class AlchemyJsonApiViewBuilder:
         self._computed_filters[name] = AlchemyComputedFilter(name=name, filter_func=filter_func)
         return self
 
-    def add_custom_field(self, name: str, instance_callback: Callable[[Any], Any] = None) -> 'AlchemyJsonApiViewBuilder':
+    def add_custom_field(self, name: str,
+                         instance_callback: Callable[[Any], Any] = None) -> 'AlchemyJsonApiViewBuilder':
         self._custom_fields[name] = CustomField(name=name, callback=instance_callback)
         return self
 
@@ -170,8 +172,6 @@ class AlchemyJsonApiViewBuilder:
         schema = SchemaType()
         schema_many = SchemaType(many=True)
 
-        base_query = self._base_query or self._model.objects.query()
-
         def default_permitted_objects(request, query):
             return query
 
@@ -203,7 +203,7 @@ class AlchemyJsonApiViewBuilder:
                     target_many = schema['serializer'](many=True)
                     #  Serialize all the included objects to JSON:API
                     include_result = target_many.json_api_dump(to_include, schema['resource_name'])
-                    rendered_includes.extend(include_result.data)
+                    rendered_includes.extend(include_result)
                 else:
                     raise Exception(f'Include {include} not supported on type {self._resource_name}')
             return rendered_includes
@@ -211,7 +211,7 @@ class AlchemyJsonApiViewBuilder:
         permitted_objects = self._permitted_objects or default_permitted_objects
 
         def object_get(request, identifier, *args, **kwargs) -> Tuple[Dict, int]:
-            permitted_query = permitted_objects(request, base_query)
+            permitted_query = permitted_objects(request, self._base_query or self._model.objects.query())
 
             obj = None
 
@@ -226,12 +226,12 @@ class AlchemyJsonApiViewBuilder:
             if self._after_get_callback:
                 obj = self._after_get_callback(request, obj)
 
-            attributes = schema.dump(obj).data
+            attributes = schema.dump(obj)
             attributes.pop(self._primary_key or 'id', None)
             return {'id': identifier, 'type': self._resource_name, 'attributes': attributes}, HTTP_200_OK
 
         def object_list(request, page, filters=None, includes=None, *args, **kwargs) -> Tuple[List, List, int, int]:
-            permitted_query = permitted_objects(request, base_query)
+            permitted_query = permitted_objects(request, self._base_query or self._model.objects.query())
             #
             #  Apply all the filters from the URL
             #
@@ -265,7 +265,7 @@ class AlchemyJsonApiViewBuilder:
                 objects = self._after_list_callback(request, objects)
 
             result = schema_many.json_api_dump(objects, self._resource_name)
-            return result.data, rendered_includes, pagination.total_results, HTTP_200_OK
+            return result, rendered_includes, pagination.total_results, HTTP_200_OK
 
         def object_create(request, data, *args, **kwargs) -> Tuple[Dict, str, int]:
             if 'multipart' in request.content_type:
@@ -275,25 +275,26 @@ class AlchemyJsonApiViewBuilder:
             if self._before_create_callback:
                 attributes = self._before_create_callback(request, attributes)
 
-            unmarshal_obj = schema.load(attributes, session=schema.session)
-            obj = unmarshal_obj.data
+            try:
+                unmarshal_obj = schema.load(attributes, session=schema.db.session, unknown=INCLUDE)
+            except ValidationError as err:
+                return err.messages, '', HTTP_400_BAD_REQUEST
 
-            if unmarshal_obj.errors:
-                return unmarshal_obj.errors, '', HTTP_400_BAD_REQUEST
+            obj = unmarshal_obj
             obj.save()
 
             if self._after_create_callback:
                 self._after_create_callback(request, attributes, obj)
-            obj.refresh_from_db()
+                obj.refresh_from_db()
 
-            dumped_attributes = schema.dump(obj).data
+            dumped_attributes = schema.dump(obj)
             dumped_attributes.pop(self._primary_key or 'id', None)
 
             return {'data': {'type': self._resource_name, 'id': obj.id,
                              'attributes': dumped_attributes}}, obj.id, HTTP_201_CREATED
 
         def object_update(request, identifier, data, *args, **kwargs) -> Tuple[Dict, int]:
-            permitted_query = permitted_objects(request, base_query)
+            permitted_query = permitted_objects(request, self._base_query or self._model.objects.query())
             obj = None
             try:
                 obj = permitted_query.filter_by(**{self._primary_key or 'id': identifier}).first()
@@ -302,28 +303,29 @@ class AlchemyJsonApiViewBuilder:
             finally:
                 if not obj:
                     return {}, HTTP_404_NOT_FOUND
+
             attributes = data['attributes']
             if self._before_update_callback:
                 attributes = self._before_update_callback(request, attributes, obj)
+                obj.refresh_from_db()
+
             for field in self._fields:
                 if field != identifier and field in attributes:
                     setattr(obj, field, attributes[field])
-            new_obj = deepcopy(obj)
-            del obj
-            new_obj.save()
-            new_obj.refresh_from_db()
-            if self._after_update_callback:
-                self._after_update_callback(request, new_obj)
-            new_obj.refresh_from_db()
+            obj.save()
 
-            dumped_attributes = schema.dump(new_obj).data
+            if self._after_update_callback:
+                self._after_update_callback(request, obj)
+                obj.refresh_from_db()
+
+            dumped_attributes = schema.dump(obj)
             dumped_attributes.pop(self._primary_key or 'id', None)
 
             return {'data': {'type': self._resource_name, 'id': identifier,
                              'attributes': dumped_attributes}}, HTTP_200_OK
 
         def object_delete(request, identifier, *args, **kwargs) -> Tuple[int]:
-            permitted_query = permitted_objects(request, base_query)
+            permitted_query = permitted_objects(request, self._base_query or self._model.objects.query())
             obj = permitted_query.filter_by(**{self._primary_key or 'id': identifier}).first()
             if self._before_delete_callback:
                 obj = self._before_delete_callback(request, obj)

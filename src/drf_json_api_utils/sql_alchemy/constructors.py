@@ -4,7 +4,6 @@ import marshmallow
 from marshmallow.fields import Function
 from marshmallow_sqlalchemy import ModelConverter, auto_field, SQLAlchemySchema
 from sqlalchemy import Enum
-from sqlalchemy.ext.hybrid import hybrid_property
 
 from drf_json_api_utils import CustomField
 from drf_json_api_utils.sql_alchemy.types import AlchemyRelation
@@ -67,8 +66,8 @@ def auto_construct_schema(alchemy_model: Type,
         return result
 
     def custom_dump(self, obj, many=None, update_fields=True, **kwargs):
-        result = SQLAlchemySchema.dump(self, obj, many=many, update_fields=update_fields, **kwargs)
-        for item in result.data:
+        result = SQLAlchemySchema.dump(self, obj, many=many, **kwargs)
+        for key, item in result.items():
             relationships = {}
             if isinstance(item, (dict,)):
                 for relation in support_relations:
@@ -119,7 +118,7 @@ def auto_construct_schema(alchemy_model: Type,
         }),
         'dump': custom_dump,
         'json_api_dump': json_api_dump,
-        'session': alchemy_model.db.session
+        'db': alchemy_model.db
     })
     _TYPE_TO_SCHEMA[alchemy_model] = {'serializer': new_serializer, 'resource_name': resource_name}
     return new_serializer

@@ -12,7 +12,7 @@ with open(path.join(here, 'README.md'), encoding='utf-8') as f:
 
 setup(
     name='drf-json-api-utils',
-    version='1.7.7',
+    version='1.7.8',
     description='Utilities to reduce the boiler-plating of django-rest-framework-json-api',
     long_description=long_description,
     long_description_content_type='text/markdown',
@@ -34,7 +34,8 @@ setup(
     packages=find_packages(where='src'),
     python_requires='>=3.5',
     install_requires=['django>=3.0.0', 'djangorestframework-jsonapi', 'djangorestframework', 'django-filter',
-                      'rest-framework-generic-relations==2.0.*', 'sqlalchemy_filters'],
+                      'rest-framework-generic-relations==2.0.*', 'sqlalchemy_filters', 'marshmallow==3.7.1',
+                      'marshmallow-sqlalchemy==0.23.1', 'sqlalchemy==1.3.19'],
     extras_require={
         'dev': ['check-manifest'],
         'test': ['coverage'],
