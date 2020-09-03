@@ -540,7 +540,7 @@ class JsonApiResourceViewBuilder:
                 if self._raw_items:
                     return Response(data={'id': identifier, 'type': self._resource_name, 'attributes': data},
                                     status=status)
-                return Response(data=data, status=status)
+                return Response(data={"data": data}, status=status)
 
         def create(view, request, *args, **kwargs):
             data = json.loads(request.body).get('data', {}) \
@@ -550,7 +550,7 @@ class JsonApiResourceViewBuilder:
                 if self._raw_items:
                     return Response(data={'id': identifier, 'type': self._resource_name, 'attributes': data},
                                     status=status)
-                return Response(data=data, status=status)
+                return Response(data={"data": data}, status=status)
 
         def _list(view, request, *args, **kwargs):
             params = request.query_params
