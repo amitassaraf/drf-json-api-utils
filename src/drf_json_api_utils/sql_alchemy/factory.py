@@ -202,7 +202,8 @@ class AlchemyJsonApiViewBuilder:
                     schema = _TYPE_TO_SCHEMA[target_model]
                     target_many = schema['serializer'](many=True)
                     #  Serialize all the included objects to JSON:API
-                    include_result = target_many.json_api_dump(to_include, schema['resource_name'])
+                    include_result = target_many.json_api_dump(to_include, schema['resource_name'],
+                                                               with_data=False)
                     rendered_includes.extend(include_result)
                 else:
                     raise Exception(f'Include {include} not supported on type {self._resource_name}')

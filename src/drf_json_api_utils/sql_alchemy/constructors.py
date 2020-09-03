@@ -8,7 +8,7 @@ from sqlalchemy import Enum
 from drf_json_api_utils import CustomField
 from drf_json_api_utils.sql_alchemy.types import AlchemyRelation
 from .namespace import _TYPE_TO_SCHEMA
-
+from uuid import UUID
 
 class EnumField(marshmallow.fields.Field):
 
@@ -51,39 +51,56 @@ def auto_construct_schema(alchemy_model: Type,
     if support_relations is None:
         support_relations = []
 
-    def json_api_dump(schema, objects, resource_type):
-        result = schema.dump(objects)
-        for item in result.data:
-            if isinstance(item, (dict,)):
-                relations = item.pop('relationships')
-                id = item.pop('id')
-                attributes = dict(item)
-                item.clear()
-                item['type'] = resource_type
-                item['id'] = id
-                item['attributes'] = attributes
-                item['relationships'] = relations
+    def json_api_dump(schema, objects, resource_type, with_data=True):
+        result = schema.dump(objects, with_data=with_data)
+        # We receive a list of items
+        for entry in result:
+            # Go over every item in the serialized object and look for relationships.
+            # We need to wrap them in a different format
+            for key, item in list(entry.items()):
+                # look for a key that is a dictionary - that item will contain relationships
+                if isinstance(item, (dict,)):
+                    relations = entry.pop('relationships')
+                    id = entry.pop('id')
+                    attributes = dict(entry)
+                    entry.clear()
+                    entry['type'] = resource_type
+                    entry['id'] = id
+                    entry['attributes'] = attributes
+                    entry['relationships'] = relations
         return result
 
-    def custom_dump(self, obj, many=None, update_fields=True, **kwargs):
+    def _custom_dump(data, with_data):
+        relationships = {}
+        for key, item in list(data.items()):
+            # Check if we have a key that is included within the supported relationships
+            for relation in support_relations:
+                if relation.field_name == key:
+                    id_or_ids = data[relation.field_name]
+                    if isinstance(id_or_ids, (list, tuple,)):
+                        relationships[relation.field_name] = [
+                            {'type': relation.resource_name or relation.model.__tablename__, 'id': item}
+                            for item in id_or_ids
+                        ]
+                    else:
+                        relationships[relation.field_name] = {
+                            'type': relation.resource_name or relation.model.__tablename__, 'id': id_or_ids
+                        } if id_or_ids else None
+                    if with_data:
+                        relationships[relation.field_name] = {"data": relationships[relation.field_name]}
+                    del data[relation.field_name]
+
+        data['relationships'] = relationships
+        return data
+
+    def custom_dump(self, obj, many=None, update_fields=True, with_data=True, **kwargs):
         result = SQLAlchemySchema.dump(self, obj, many=many, **kwargs)
-        for key, item in result.items():
-            relationships = {}
-            if isinstance(item, (dict,)):
-                for relation in support_relations:
-                    if relation.field_name in item:
-                        id_or_ids = item[relation.field_name]
-                        if isinstance(id_or_ids, (list, tuple,)):
-                            relationships[relation.field_name] = [{
-                                'type': relation.resource_name or relation.model.__tablename__, 'id': item} for item in
-                                id_or_ids]
-                        else:
-                            relationships[relation.field_name] = {
-                                'type': relation.resource_name or relation.model.__tablename__, 'id': id_or_ids} if \
-                                item[
-                                    relation.field_name] else None
-                        del item[relation.field_name]
-                item['relationships'] = relationships
+
+        if isinstance(result, list):
+            result = [_custom_dump(r, with_data) for r in result]
+        else:
+            result = _custom_dump(result, with_data)
+
         return result
 
     generated_fields = {}
