@@ -289,11 +289,8 @@ class AlchemyJsonApiViewBuilder:
                 self._after_create_callback(request, attributes, obj)
                 obj.refresh_from_db()
 
-            dumped_attributes = schema.dump(obj)
-            dumped_attributes.pop(self._primary_key or 'id', None)
-
-            return {'data': {'type': self._resource_name, 'id': obj.id,
-                             'attributes': dumped_attributes}}, obj.id, HTTP_201_CREATED
+            result = schema.json_api_dump(obj, self._resource_name)
+            return result, obj.id, HTTP_201_CREATED
 
         def object_update(request, identifier, data, *args, **kwargs) -> Tuple[Dict, int]:
             permitted_query = permitted_objects(request, self._base_query or self._model.objects.query())
@@ -320,11 +317,8 @@ class AlchemyJsonApiViewBuilder:
                 self._after_update_callback(request, obj)
                 obj.refresh_from_db()
 
-            dumped_attributes = schema.dump(obj)
-            dumped_attributes.pop(self._primary_key or 'id', None)
-
-            return {'data': {'type': self._resource_name, 'id': identifier,
-                             'attributes': dumped_attributes}}, HTTP_200_OK
+            result = schema.json_api_dump(obj, self._resource_name)
+            return result, HTTP_200_OK
 
         def object_delete(request, identifier, *args, **kwargs) -> Tuple[int]:
             permitted_query = permitted_objects(request, self._base_query or self._model.objects.query())
