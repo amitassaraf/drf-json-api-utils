@@ -52,11 +52,30 @@ def auto_construct_schema(alchemy_model: Type,
         support_relations = []
 
     def json_api_dump(schema, objects, resource_type, with_data=True):
+        """
+        Custom dump for JSON api objects
+        Args:
+            schema: The model marshmallow schema
+            objects: either a list or a single object
+            resource_type: the name of the JSON-DRF object
+            with_data: Should we wrap the output entry with {"data": entry} key
+
+        Returns: a serialized json-api format list or dict
+
+        """
+        # Did we get a list of a single object
+        many = isinstance(objects, list)
+
+        # Dumping the objects using the model serializer
         result = schema.dump(objects, with_data=with_data)
-        # We receive a list of items
+
+        # We need to listify the result in case we received a single object
+        if not many:
+            result = [result]
+
         for entry in result:
-            # Go over every item in the serialized object and look for relationships.
-            # We need to wrap them in a different format
+            # Go over every item in the serialized object list and look for relationships.
+            # As relationships need to be extracted outside the attributes
             for key, item in list(entry.items()):
                 # look for a key that is a dictionary - that item will contain relationships
                 if isinstance(item, (dict,)):
@@ -68,9 +87,18 @@ def auto_construct_schema(alchemy_model: Type,
                     entry['id'] = id
                     entry['attributes'] = attributes
                     entry['relationships'] = relations
-        return result
+        return result if many else result[0]
 
     def _custom_dump(data, with_data):
+        """
+        Gets a serialized object and extracts the relationships from it.
+        Args:
+            data: serialized object dict
+            with_data: Should we wrap the content as {"data": data}
+
+        Returns: serialized dict
+
+        """
         relationships = {}
         for key, item in list(data.items()):
             # Check if we have a key that is included within the supported relationships
@@ -93,7 +121,19 @@ def auto_construct_schema(alchemy_model: Type,
         data['relationships'] = relationships
         return data
 
-    def custom_dump(self, obj, many=None, update_fields=True, with_data=True, **kwargs):
+    def custom_dump(self, obj, many=None, with_data=True, **kwargs):
+        """
+        A wrapper for the costum serialized dump
+        Args:
+            self:
+            obj: the object to serialized
+            many: is it a list?
+            with_data: should we wrap the output dict in {"data": data}
+            **kwargs:
+
+        Returns:
+
+        """
         result = SQLAlchemySchema.dump(self, obj, many=many, **kwargs)
 
         if isinstance(result, list):
