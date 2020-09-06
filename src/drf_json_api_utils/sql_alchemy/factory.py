@@ -8,7 +8,7 @@ from rest_framework.authentication import BaseAuthentication
 from rest_framework.permissions import BasePermission
 from rest_framework.request import Request
 from rest_framework.status import HTTP_200_OK, HTTP_201_CREATED, HTTP_204_NO_CONTENT, HTTP_404_NOT_FOUND, \
-    HTTP_400_BAD_REQUEST
+    HTTP_400_BAD_REQUEST, HTTP_500_INTERNAL_SERVER_ERROR
 from sqlalchemy.exc import StatementError
 from sqlalchemy.orm import Query
 from sqlalchemy_filters import apply_filters
@@ -227,10 +227,8 @@ class AlchemyJsonApiViewBuilder:
             if self._after_get_callback:
                 obj = self._after_get_callback(request, obj)
 
-            result = schema.json_api_dump(obj,  self._resource_name)
-            # attributes.pop(self._primary_key or 'id', None)
+            result = schema.json_api_dump(obj, self._resource_name)
             return result, HTTP_200_OK
-            # return {'id': identifier, 'type': self._resource_name, 'attributes': attributes}, HTTP_200_OK
 
         def object_list(request, page, filters=None, includes=None, *args, **kwargs) -> Tuple[List, List, int, int]:
             permitted_query = permitted_objects(request, self._base_query or self._model.objects.query())
@@ -264,7 +262,10 @@ class AlchemyJsonApiViewBuilder:
             rendered_includes = render_includes(includes, objects)
 
             if self._after_list_callback:
-                objects = self._after_list_callback(request, objects)
+                try:
+                    objects = self._after_list_callback(request, objects)
+                except Exception as e:
+                    return [{'errors': [str(e)]}], [], 0, getattr(e, 'http_status', HTTP_500_INTERNAL_SERVER_ERROR)
 
             result = schema_many.json_api_dump(objects, self._resource_name)
             return result, rendered_includes, pagination.total_results, HTTP_200_OK
@@ -275,7 +276,10 @@ class AlchemyJsonApiViewBuilder:
             else:
                 attributes = data['attributes']
             if self._before_create_callback:
-                attributes = self._before_create_callback(request, attributes)
+                try:
+                    attributes = self._before_create_callback(request, attributes)
+                except Exception as e:
+                    return {'errors': [str(e)]}, '', getattr(e, 'http_status', HTTP_500_INTERNAL_SERVER_ERROR)
 
             try:
                 unmarshal_obj = schema.load(attributes, session=schema.db.session, unknown=INCLUDE)
@@ -286,7 +290,10 @@ class AlchemyJsonApiViewBuilder:
             obj.save()
 
             if self._after_create_callback:
-                self._after_create_callback(request, attributes, obj)
+                try:
+                    self._after_create_callback(request, attributes, obj)
+                except Exception as e:
+                    return {'errors': [str(e)]}, '', getattr(e, 'http_status', HTTP_500_INTERNAL_SERVER_ERROR)
                 obj.refresh_from_db()
 
             result = schema.json_api_dump(obj, self._resource_name)
@@ -305,7 +312,10 @@ class AlchemyJsonApiViewBuilder:
 
             attributes = data['attributes']
             if self._before_update_callback:
-                attributes = self._before_update_callback(request, attributes, obj)
+                try:
+                    attributes = self._before_update_callback(request, attributes, obj)
+                except Exception as e:
+                    return {'errors': [str(e)]}, getattr(e, 'http_status', HTTP_500_INTERNAL_SERVER_ERROR)
                 obj.refresh_from_db()
 
             for field in self._fields:
@@ -314,7 +324,10 @@ class AlchemyJsonApiViewBuilder:
             obj.save()
 
             if self._after_update_callback:
-                self._after_update_callback(request, obj)
+                try:
+                    self._after_update_callback(request, obj)
+                except Exception as e:
+                    return {'errors': [str(e)]}, getattr(e, 'http_status', HTTP_500_INTERNAL_SERVER_ERROR)
                 obj.refresh_from_db()
 
             result = schema.json_api_dump(obj, self._resource_name)
@@ -324,12 +337,18 @@ class AlchemyJsonApiViewBuilder:
             permitted_query = permitted_objects(request, self._base_query or self._model.objects.query())
             obj = permitted_query.filter_by(**{self._primary_key or 'id': identifier}).first()
             if self._before_delete_callback:
-                obj = self._before_delete_callback(request, obj)
+                try:
+                    obj = self._before_delete_callback(request, obj)
+                except Exception as e:
+                    return getattr(e, 'http_status', HTTP_500_INTERNAL_SERVER_ERROR)
             if obj:
                 obj.delete()
 
                 if self._after_delete_callback:
-                    self._after_delete_callback(request, obj)
+                    try:
+                        self._after_delete_callback(request, obj)
+                    except Exception as e:
+                        return getattr(e, 'http_status', HTTP_500_INTERNAL_SERVER_ERROR)
             return HTTP_204_NO_CONTENT
 
         builder = JsonApiResourceViewBuilder(action_name=self._resource_name,
