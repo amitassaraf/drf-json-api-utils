@@ -187,7 +187,10 @@ class AlchemyJsonApiViewBuilder:
                 if include_on_model:
                     model_property = include_on_model.property
                     #  Get the primary key of the target relationship table
-                    target_primary_key = model_property.target.primary_key.columns.values()[0].name
+                    primary_join = model_property.primaryjoin
+                    target_primary_key = primary_join.right.name \
+                        if self._model.__tablename__ == primary_join.left.table.name \
+                        else primary_join.left.name
                     #  Get the local foreign key column name that connects the relationship
                     local_column = model_property.local_columns.copy().pop()
                     #  Get the Alchemy Model of the target relationship table
