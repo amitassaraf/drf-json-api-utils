@@ -79,6 +79,8 @@ def auto_construct_schema(alchemy_model: Type,
             for key, item in list(entry.items()):
                 # look for a key that is a dictionary - that item will contain relationships
                 if isinstance(item, (dict,)):
+                    if 'id' not in entry:
+                        return {}
                     relations = entry.pop('relationships')
                     id = entry.pop('id')
                     attributes = dict(entry)
