@@ -255,7 +255,7 @@ class AlchemyJsonApiViewBuilder:
             #
             #  Paginate the result
             #
-            query, pagination = apply_pagination(filtered_query, page_number=page, page_size=self._page_size)
+            query, pagination = apply_pagination(filtered_query, page_number=int(page), page_size=self._page_size)
 
             if self._before_list_callback:
                 query = self._before_list_callback(request, query)
