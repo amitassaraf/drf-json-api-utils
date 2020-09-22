@@ -10,6 +10,7 @@ from rest_framework.request import Request
 from rest_framework.status import HTTP_200_OK, HTTP_201_CREATED, HTTP_204_NO_CONTENT, HTTP_404_NOT_FOUND, \
     HTTP_400_BAD_REQUEST, HTTP_500_INTERNAL_SERVER_ERROR
 from sqlalchemy.exc import StatementError
+from sqlalchemy.inspection import inspect
 from sqlalchemy.orm import Query
 from sqlalchemy_filters import apply_filters
 from sqlalchemy_filters import apply_pagination
@@ -188,9 +189,6 @@ class AlchemyJsonApiViewBuilder:
                     model_property = include_on_model.property
                     #  Get the primary key of the target relationship table
                     primary_join = model_property.primaryjoin
-                    target_primary_key = primary_join.right.name \
-                        if self._model.__tablename__ == primary_join.left.table.name \
-                        else primary_join.left.name
                     #  Get the local foreign key column name that connects the relationship
                     local_column = model_property.local_columns.copy().pop()
                     #  Get the Alchemy Model of the target relationship table
@@ -198,10 +196,13 @@ class AlchemyJsonApiViewBuilder:
                     #  Check that the item we are targeting has a JSON:API view
                     if target_model not in _TYPE_TO_SCHEMA:
                         raise Exception(f'No JSON:API view defined for type {target_model}')
+                    primary_key = inspect(self._model).primary_key[0].name
                     #  Fetch all the related items to be included in the result
-                    to_include = target_model.objects.query().filter(
-                        getattr(target_model, target_primary_key).in_(
-                            [getattr(item, local_column.name) for item in objects])).all()
+                    to_include = target_model.objects.query().filter(primary_join,
+                                                                     getattr(self._model, primary_key).in_(
+                                                                         [getattr(item, local_column.name) for item in
+                                                                          objects]
+                                                                     )).all()
                     schema = _TYPE_TO_SCHEMA[target_model]
                     target_many = schema['serializer'](many=True)
                     #  Serialize all the included objects to JSON:API

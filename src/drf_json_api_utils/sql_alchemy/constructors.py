@@ -106,7 +106,7 @@ def auto_construct_schema(alchemy_model: Type,
             # Check if we have a key that is included within the supported relationships
             for relation in support_relations:
                 if relation.field_name == key:
-                    id_or_ids = data[relation.field_name]
+                    id_or_ids = data.get(relation.field_name)
                     if isinstance(id_or_ids, (list, tuple,)):
                         relationships[relation.field_name] = [
                             {'type': relation.resource_name or relation.model.__tablename__, 'id': item}
