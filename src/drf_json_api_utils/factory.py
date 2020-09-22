@@ -565,7 +565,7 @@ class JsonApiResourceViewBuilder:
                     filters.append({'field': match.groupdict()['field'],
                                     'op': FILTER_MAP.get(match.groupdict()['op'], '=='),
                                     'value': value})
-            page = params.get('page_number', 1)
+            page = int(params.get('page_number', 1))
             include = params.get('include', '')
             includes = include.split(',') if include else []
             if self._on_list_callback is not None:

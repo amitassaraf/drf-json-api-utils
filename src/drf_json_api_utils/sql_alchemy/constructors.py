@@ -76,19 +76,17 @@ def auto_construct_schema(alchemy_model: Type,
         for entry in result:
             # Go over every item in the serialized object list and look for relationships.
             # As relationships need to be extracted outside the attributes
-            for key, item in list(entry.items()):
-                # look for a key that is a dictionary - that item will contain relationships
-                if isinstance(item, (dict,)):
-                    if 'id' not in entry:
-                        return {}
-                    relations = entry.pop('relationships')
-                    id = entry.pop('id')
-                    attributes = dict(entry)
-                    entry.clear()
-                    entry['type'] = resource_type
-                    entry['id'] = id
-                    entry['attributes'] = attributes
-                    entry['relationships'] = relations
+            if isinstance(entry, (dict,)):
+                if 'id' not in entry:
+                    return {}
+                relations = entry.pop('relationships')
+                id = entry.pop('id')
+                attributes = dict(entry)
+                entry.clear()
+                entry['type'] = resource_type
+                entry['id'] = id
+                entry['attributes'] = attributes
+                entry['relationships'] = relations
         return result if many else result[0]
 
     def _custom_dump(data, with_data):
