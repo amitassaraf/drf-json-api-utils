@@ -478,7 +478,8 @@ class JsonApiResourceViewBuilder:
                  allowed_methods=json_api_spec_http_methods.HTTP_ACTIONS,
                  permission_classes: Sequence[Type[BasePermission]] = None,
                  authentication_classes: Sequence[Type[BaseAuthentication]] = None,
-                 raw_items=False):
+                 raw_items=False,
+                 page_size: int = 50):
         self._allowed_methods = [*allowed_methods]
         self._resource_name = action_name
         self._raw_items = not raw_items
@@ -490,6 +491,7 @@ class JsonApiResourceViewBuilder:
         self._on_delete_callback = None
         self._on_list_callback = None
         self._on_get_callback = None
+        self._page_size = page_size
 
     def __warn_if_method_not_available(self, method: str):
         if method not in self._allowed_methods:
@@ -570,7 +572,7 @@ class JsonApiResourceViewBuilder:
             includes = include.split(',') if include else []
             if self._on_list_callback is not None:
                 data, included, count, status = self._on_list_callback(request, page, filters, includes, *args, **kwargs)
-                pages = math.ceil(count / 50)
+                pages = math.ceil(count / self._page_size)
                 return Response(data={'links': {
                     "first": f"/api/{self._resource_name}?page_number=1",
                     "last": f"/api/{self._resource_name}?page_number={pages}",
