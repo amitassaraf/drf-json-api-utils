@@ -29,7 +29,7 @@ def _construct_serializer(serializer_prefix: str, model: Type[Model], resource_n
                           custom_fields: Sequence[CustomField], relations: Sequence[Relation],
                           generic_relations: Sequence[GenericRelation], related_limit: int,
                           primary_key_name: str, on_validate: FunctionType = None,
-                          after_list_callback: Callable = None) -> Type:
+                          after_list_callback: Callable = None, is_admin: bool = False) -> Type:
     def to_representation(self, iterable):
         if isinstance(iterable, QuerySet):
             real_count = iterable.count()

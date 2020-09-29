@@ -87,6 +87,7 @@ class JsonApiModelViewBuilder:
         self._after_delete_callback = None
         self._before_list_callback = None
         self._after_list_callback = None
+        self._is_admin = False
         if queryset is None:
             self._queryset = self._model.objects
         else:
@@ -149,7 +150,7 @@ class JsonApiModelViewBuilder:
         return self
 
     def add_computed_filter(self, name: str, filter_type: Filter,
-                            filter_func: Callable[[QuerySet], str],
+                            filter_func: Callable[[QuerySet, str], Any],
                             field: str = None) -> 'JsonApiModelViewBuilder':
         self._computed_filters[name] = ComputedFilter(field=field or name, filter_func=filter_func,
                                                       filter_type=filter_type)
@@ -276,15 +277,21 @@ class JsonApiModelViewBuilder:
         admin_builder = deepcopy(self)
         admin_builder._skip_plugins = [plugins.AUTO_ADMIN_VIEWS]
         admin_builder._spice_queryset = None
-        admin_builder._resource_name = f'admin_view_{admin_builder._resource_name}'
+        admin_builder._resource_name = f'admin_view_{admin_builder._resource_name.replace("admin_view_", "")}'
         admin_permission_class = admin_builder._plugin_options.get(plugins.AUTO_ADMIN_VIEWS, {}).get(
             'ADMIN_PERMISSION_CLASS')
+        admin_builder._is_admin = True
+
+        for limit_to_on_retrieve in [False, True]:
+            if limit_to_on_retrieve in admin_builder._relations:
+                for relation in admin_builder._relations[limit_to_on_retrieve]:
+                    relation.resource_name = f'admin_view_{relation.resource_name.replace("admin_view_", "")}'
 
         if admin_permission_class is not None:
             admin_builder._permission_classes = [*admin_builder._permission_classes, admin_permission_class]
 
         admin_urls = admin_builder._build(url_resource_name=self._resource_name, urls_prefix='admin/',
-                                          ignore_serializer=True)
+                                          ignore_serializer=False)
 
         return admin_urls
 
@@ -318,7 +325,8 @@ class JsonApiModelViewBuilder:
                                           self._related_limit,
                                           self._primary_key_name,
                                           self._before_update_callback if limit_to_on_retrieve else self._before_create_callback,
-                                          self._after_list_callback)
+                                          self._after_list_callback,
+                                          self._is_admin)
                 _append_to_namespace(method_to_serializer[limit_to_on_retrieve])
         else:
             method_to_serializer[False] = _MODEL_TO_SERIALIZERS[self._model][0]

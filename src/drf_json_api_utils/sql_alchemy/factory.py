@@ -148,7 +148,7 @@ class AlchemyJsonApiViewBuilder:
         admin_builder = deepcopy(self)
         admin_builder._skip_plugins = [plugins.AUTO_ADMIN_VIEWS]
         admin_builder._permitted_objects = None
-        admin_builder._resource_name = f'admin_view_{admin_builder._resource_name}'
+        admin_builder._resource_name = f'admin_view_{admin_builder._resource_name.replace("admin_view_", "")}'
         admin_permission_class = admin_builder._plugin_options.get(plugins.AUTO_ADMIN_VIEWS, {}).get(
             'ADMIN_PERMISSION_CLASS')
 
