@@ -670,12 +670,14 @@ def json_api_view(resource_name: str,
                   authentication_classes: Optional[Sequence[Type[BaseAuthentication]]] = None,
                   urls_prefix: str = '',
                   urls_suffix: str = '',
-                  multiple_resource=True) -> FunctionType:
+                  multiple_resource=True,
+                  page_size: int = 50) -> FunctionType:
     def decorator(func: Callable[[Request], Tuple[Dict, int]]):
         builder = JsonApiResourceViewBuilder(action_name=resource_name,
                                              allowed_methods=[method],
                                              permission_classes=permission_classes,
-                                             authentication_classes=authentication_classes)
+                                             authentication_classes=authentication_classes,
+                                             page_size=page_size)
         if method == json_api_spec_http_methods.HTTP_GET and multiple_resource:
             return builder.on_list(list_callback=func) \
                 .get_urls(urls_prefix=urls_prefix, urls_suffix=urls_suffix)
