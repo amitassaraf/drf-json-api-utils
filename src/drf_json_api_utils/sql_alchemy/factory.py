@@ -31,6 +31,7 @@ class AlchemyJsonApiViewBuilder:
                  alchemy_model: Type,
                  resource_name: str,
                  fields: Sequence[str],
+                 api_version: Optional[str] = '',
                  primary_key: Optional[str] = 'id',
                  allowed_methods: Optional[Sequence[str]] = json_api_spec_http_methods.HTTP_ACTIONS,
                  base_query: Optional[Query] = None,
@@ -65,6 +66,7 @@ class AlchemyJsonApiViewBuilder:
         self._relations = []
         self._custom_fields = {}
         self._computed_filters = {}
+        self._api_version = api_version
         self._skip_plugins = skip_plugins if skip_plugins is not None else [plugins.AUTO_ADMIN_VIEWS]
         include_plugins = include_plugins or []
         for item in include_plugins:
@@ -128,10 +130,12 @@ class AlchemyJsonApiViewBuilder:
                      model: Type,
                      resource_name: str,
                      many: bool = False,
-                     primary_key_name: str = None) -> 'AlchemyJsonApiViewBuilder':
+                     primary_key_name: str = None,
+                     api_version: Optional[str] = '') -> 'AlchemyJsonApiViewBuilder':
         self._relations.append(AlchemyRelation(field_name=field, model=model, many=many,
                                                resource_name=resource_name,
-                                               primary_key=primary_key_name))
+                                               primary_key=primary_key_name,
+                                               api_version=api_version))
         return self
 
     def add_computed_filter(self, name: str,
@@ -356,6 +360,7 @@ class AlchemyJsonApiViewBuilder:
             return HTTP_204_NO_CONTENT
 
         builder = JsonApiResourceViewBuilder(action_name=self._resource_name,
+                                             api_version=self._api_version,
                                              unique_identifier=self._primary_key,
                                              allowed_methods=self._allowed_methods,
                                              permission_classes=self._permission_classes,

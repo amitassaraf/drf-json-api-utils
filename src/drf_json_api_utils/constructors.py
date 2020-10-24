@@ -25,7 +25,8 @@ from .namespace import _RESOURCE_NAME_TO_SPICE, _MODEL_TO_SERIALIZERS
 from .types import CustomField, Relation, Filter, GenericRelation, ComputedFilter
 
 
-def _construct_serializer(serializer_prefix: str, model: Type[Model], resource_name: str, fields: Sequence[str],
+def _construct_serializer(serializer_prefix: str, serializer_suffix: str,
+                          model: Type[Model], resource_name: str, fields: Sequence[str],
                           custom_fields: Sequence[CustomField], relations: Sequence[Relation],
                           generic_relations: Sequence[GenericRelation], related_limit: int,
                           primary_key_name: str, on_validate: FunctionType = None,
@@ -94,16 +95,16 @@ def _construct_serializer(serializer_prefix: str, model: Type[Model], resource_n
     included_generic_serializers = {}
     for relation in relations:
         included_serializers[
-            relation.field] = f'drf_json_api_utils.namespace.{f"{serializer_prefix}{relation.resource_name}Serializer"}'
+            relation.field] = f'drf_json_api_utils.namespace.{f"{serializer_prefix}{relation.resource_name}Serializer{relation.api_version}"}'
 
     for relation in generic_relations:
         for related_model, relation_resource_name in getattr(relation, 'related', {}).items():
             if relation.field not in included_generic_serializers:
                 included_generic_serializers[relation.field] = []
             included_generic_serializers[relation.field].append(
-                f'drf_json_api_utils.namespace.{f"{serializer_prefix}{relation_resource_name}Serializer"}')
+                f'drf_json_api_utils.namespace.{f"{serializer_prefix}{relation_resource_name}Serializer{relation.api_version}"}')
             included_serializers[
-                relation.field] = f'drf_json_api_utils.namespace.{f"{serializer_prefix}{relation_resource_name}Serializer"}'
+                relation.field] = f'drf_json_api_utils.namespace.{f"{serializer_prefix}{relation_resource_name}Serializer{relation.api_version}"}'
 
     def get_generic_included_serializers(serializer):
         included_serializers = copy.copy(getattr(serializer, 'included_generic_serializers', dict()))
@@ -205,7 +206,9 @@ def _construct_serializer(serializer_prefix: str, model: Type[Model], resource_n
             if isinstance(instance, (list, QuerySet)) and len(instance) > 0:
                 check_instance = instance[0]
             if check_instance is not None and not isinstance(check_instance, (cls.Meta.model, list, QuerySet)):
-                return _MODEL_TO_SERIALIZERS[type(check_instance)][0](instance=instance, *args, **kwargs)
+                serial = list(filter(lambda serial: serial.__class__.__name__.startswith(serializer_prefix),
+                            _MODEL_TO_SERIALIZERS[type(check_instance)]))
+                return serial[-1](instance=instance, *args, **kwargs)
             return super(GenericSerializer, cls).__new__(cls, instance=instance, *args, **kwargs)
 
         @property
@@ -215,7 +218,7 @@ def _construct_serializer(serializer_prefix: str, model: Type[Model], resource_n
                 ret = after_list_callback({'results': [ret]})['results'][0]
             return ReturnDict(ret, serializer=self)
 
-    new_serializer = type(f'{serializer_prefix}{resource_name}Serializer', (GenericSerializer,), {
+    new_serializer = type(f'{serializer_prefix}{resource_name}Serializer{serializer_suffix}', (GenericSerializer,), {
         **{custom_field.name: serializers.SerializerMethodField(read_only=True) for custom_field in
            custom_fields},
         **{f'get_{custom_field.name}': staticmethod(custom_field.callback) for custom_field in custom_fields},
@@ -225,10 +228,10 @@ def _construct_serializer(serializer_prefix: str, model: Type[Model], resource_n
             else getattr(model, relation.field).field.related_model.objects.all(),
             many=relation.many,
             required=getattr(relation, 'required', False),
-            related_link_view_name=f'{relation.resource_name}-detail',
+            related_link_view_name=f'{relation.resource_name}{relation.api_version}-detail',
             related_link_lookup_field=primary_key_name,
             related_link_url_kwarg=relation.primary_key_name or 'id',
-            self_link_view_name=f'{resource_name}-relationships'
+            self_link_view_name=f'{resource_name}{serializer_suffix}-relationships'
         ) for relation in relations if hasattr(model, relation.field)},
         **{relation.field: GenericRelatedField(
             {
@@ -238,14 +241,14 @@ def _construct_serializer(serializer_prefix: str, model: Type[Model], resource_n
                     else related_model.objects.all(),
                     many=relation.many,
                     required=getattr(relation, 'required', False),
-                    related_link_view_name=f'{relation_resource_name}-detail',
+                    related_link_view_name=f'{relation_resource_name}{relation.api_version}-detail',
                     related_link_lookup_field=primary_key_name,
                     related_link_url_kwarg='id',
-                    self_link_view_name=f'{resource_name}-relationships'
+                    self_link_view_name=f'{resource_name}{serializer_suffix}-relationships'
                 )
                 for related_model, relation_resource_name in getattr(relation, 'related', {}).items()
             },
-            self_link_view_name=f'{resource_name}-relationships',
+            self_link_view_name=f'{resource_name}{serializer_suffix}-relationships',
             related_link_lookup_field=primary_key_name) for relation in generic_relations if
             hasattr(model, relation.field)},
         'validate': validate_data,

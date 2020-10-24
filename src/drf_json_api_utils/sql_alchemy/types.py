@@ -11,6 +11,7 @@ class AlchemyRelation:
     resource_name: str = None
     many: bool = False
     primary_key: str = 'id'
+    api_version: str = ''
 
 
 @dataclass

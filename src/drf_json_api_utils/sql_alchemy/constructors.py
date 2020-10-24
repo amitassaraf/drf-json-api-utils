@@ -8,7 +8,7 @@ from sqlalchemy import Enum
 from drf_json_api_utils import CustomField
 from drf_json_api_utils.sql_alchemy.types import AlchemyRelation
 from .namespace import _TYPE_TO_SCHEMA
-from uuid import UUID
+
 
 class EnumField(marshmallow.fields.Field):
 
@@ -152,7 +152,8 @@ def auto_construct_schema(alchemy_model: Type,
         if composite_class is not None and composite_class in custom_field_handlers:
             generated_fields[field] = custom_field_handlers[composite_class](field)
         else:
-            if not isinstance(model_field, (property,)) and not model_field.__class__.__name__ == 'hybrid_propertyProxy':
+            if not isinstance(model_field,
+                              (property,)) and not model_field.__class__.__name__ == 'hybrid_propertyProxy':
                 generated_fields[field] = auto_field()
             else:
                 additional.append(field)

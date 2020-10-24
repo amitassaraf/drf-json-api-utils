@@ -55,7 +55,10 @@ FILTER_MAP = {
 class JsonApiModelViewBuilder:
     DEFAULT_RELATED_LIMIT = 100
 
-    def __init__(self, model: Type[Model], primary_key_name: Optional[str] = None, resource_name: Optional[str] = None,
+    def __init__(self, model: Type[Model],
+                 primary_key_name: Optional[str] = None,
+                 resource_name: Optional[str] = None,
+                 api_version: Optional[str] = '',
                  allowed_methods=json_api_spec_http_methods.HTTP_ALL,
                  permission_classes: Optional[Sequence[Type[BasePermission]]] = None,
                  authentication_classes: Optional[Sequence[Type[BaseAuthentication]]] = None,
@@ -72,6 +75,8 @@ class JsonApiModelViewBuilder:
         self._relations = {}
         self._generic_relations = {}
         self._custom_fields = {}
+        self._api_version = api_version.replace('.', '').replace('-', '')
+        self._url_api_version = f'v{api_version}'
         self._primary_key_name = primary_key_name or 'id'
         self._allowed_methods = [*allowed_methods]
         self._resource_name = resource_name or self._model.objects.model._meta.db_table.split('_')[-1]
@@ -159,30 +164,30 @@ class JsonApiModelViewBuilder:
     def add_relation(self, field: str, many: bool = False, resource_name: str = None,
                      primary_key_name: str = None,
                      limit_to_on_retrieve: bool = False,
-                     required: bool = False) -> 'JsonApiModelViewBuilder':
+                     required: bool = False, api_version: Optional[str] = '') -> 'JsonApiModelViewBuilder':
         if limit_to_on_retrieve not in self._relations:
             self._relations[limit_to_on_retrieve] = []
         self._relations[limit_to_on_retrieve].append(
             Relation(field=field, resource_name=resource_name or field, many=many,
-                     primary_key_name=primary_key_name, required=required))
+                     primary_key_name=primary_key_name, required=required, api_version=api_version))
         return self
 
     def rl(self, field: str, many: bool = False, resource_name: str = None,
            primary_key_name: str = None,
            limit_to_on_retrieve: bool = False,
-           required: bool = False) -> 'JsonApiModelViewBuilder':
+           required: bool = False, api_version: Optional[str] = '') -> 'JsonApiModelViewBuilder':
         return self.add_relation(field=field, many=many, resource_name=resource_name, primary_key_name=primary_key_name,
-                                 limit_to_on_retrieve=limit_to_on_retrieve, required=required)
+                                 limit_to_on_retrieve=limit_to_on_retrieve, required=required, api_version=api_version)
 
     def add_generic_relation(self, field: str,
                              related: Dict[Type[Model], str],
                              many: bool = False,
                              limit_to_on_retrieve: bool = False,
-                             required: bool = False) -> 'JsonApiModelViewBuilder':
+                             required: bool = False, api_version: Optional[str] = '') -> 'JsonApiModelViewBuilder':
         if limit_to_on_retrieve not in self._generic_relations:
             self._generic_relations[limit_to_on_retrieve] = []
         self._generic_relations[limit_to_on_retrieve].append(
-            GenericRelation(field=field, related=related, many=many, required=required))
+            GenericRelation(field=field, related=related, many=many, required=required, api_version=api_version))
         return self
 
     def add_custom_field(self, name: str, instance_callback: Callable[[Any], Any] = None,
@@ -316,7 +321,9 @@ class JsonApiModelViewBuilder:
                     generic_relations.extend(self._generic_relations[False] if False in self._generic_relations else [])
 
                 method_to_serializer[limit_to_on_retrieve] = \
-                    _construct_serializer('Retrieve' if limit_to_on_retrieve else 'List', self._model,
+                    _construct_serializer('Retrieve' if limit_to_on_retrieve else 'List',
+                                          self._api_version,
+                                          self._model,
                                           self._resource_name,
                                           fields,
                                           custom_fields,
@@ -329,8 +336,13 @@ class JsonApiModelViewBuilder:
                                           self._is_admin)
                 _append_to_namespace(method_to_serializer[limit_to_on_retrieve])
         else:
-            method_to_serializer[False] = _MODEL_TO_SERIALIZERS[self._model][0]
-            method_to_serializer[True] = _MODEL_TO_SERIALIZERS[self._model][1]
+
+            method_to_serializer[False] = list(
+                filter(lambda serializer: serializer.__class__.__name__.startswith('List'),
+                       _MODEL_TO_SERIALIZERS[self._model]))
+            method_to_serializer[True] = list(
+                filter(lambda serializer: serializer.__class__.__name__.startswith('Retrieve'),
+                       _MODEL_TO_SERIALIZERS[self._model]))
 
         filter_set, filter_backend = _construct_filter_backend(self._model, self._resource_name, self._filters,
                                                                self._computed_filters)
@@ -376,7 +388,7 @@ class JsonApiModelViewBuilder:
                 response.data = self._after_list_callback(response.data)
             return response
 
-        base_model_view_set = type(f'{self._resource_name}JSONApiModelViewSet', (ModelViewSet,), {
+        base_model_view_set = type(f'{self._resource_name}JSONApiModelViewSet{self._api_version}', (ModelViewSet,), {
             'renderer_classes': (JSONRenderer, BrowsableAPIRenderer),
             'parser_classes': (JSONParser, FormParser, MultiPartParser),
             'metadata_class': JSONAPIMetadata,
@@ -401,12 +413,12 @@ class JsonApiModelViewBuilder:
 
         urls = []
         for pk_name in ['pk', self._primary_key_name]:
-            relationship_view = type(f'{self._resource_name}RelationshipsView', (RelationshipView,), {
+            relationship_view = type(f'{self._resource_name}RelationshipsView{self._api_version}', (RelationshipView,), {
                 'get_queryset': get_queryset,
                 'lookup_field': pk_name
             })
 
-            list_method_view_set = type(f'List{self._resource_name}ViewSet', (base_model_view_set,), {
+            list_method_view_set = type(f'List{self._resource_name}ViewSet{self._api_version}', (base_model_view_set,), {
                 'get_queryset': get_queryset,
                 'serializer_class': method_to_serializer[False],
                 'http_method_names': list(map(lambda method: method.lower(),
@@ -422,7 +434,7 @@ class JsonApiModelViewBuilder:
                 'list': perform_list
             })
 
-            get_method_view_set = type(f'Get{self._resource_name}ViewSet', (base_model_view_set,), {
+            get_method_view_set = type(f'Get{self._resource_name}ViewSet{self._api_version}', (base_model_view_set,), {
                 'get_queryset': get_queryset,
                 'serializer_class': method_to_serializer[True],
                 'http_method_names': list(map(lambda method: method.lower(),
@@ -439,6 +451,12 @@ class JsonApiModelViewBuilder:
                 'retrieve': perform_get
             })
 
+            if len(urls_prefix) > 0:
+                if len(self._url_api_version) > 1 and self._url_api_version not in urls_prefix:
+                    urls_prefix = f'{urls_prefix.rstrip("/")}/{self._url_api_version}'
+            elif len(self._url_api_version) > 1:
+                urls_prefix = self._url_api_version
+
             if len(urls_prefix) > 0 and urls_prefix[-1] != '/':
                 urls_prefix = f'{urls_prefix}/'
 
@@ -448,18 +466,18 @@ class JsonApiModelViewBuilder:
             urls.extend([
                 url(rf'^{urls_prefix}{url_resource_name}$',
                     list_method_view_set.as_view({'get': 'list', 'post': 'create'}, name=f'list_{self._resource_name}'),
-                    name=f'list-{self._resource_name}'),
+                    name=f'list-{self._resource_name}{self._api_version}'),
                 url(rf'^{urls_prefix}{url_resource_name}/(?P<{pk_name}>[^/.]+)/$',
                     get_method_view_set.as_view({'get': 'retrieve', 'patch': 'update', 'delete': 'destroy'},
                                                 name=f'get_{self._resource_name}'),
-                    name=f'{self._resource_name}-detail'),
+                    name=f'{self._resource_name}{self._api_version}-detail'),
                 url(rf'^{urls_prefix}{url_resource_name}/(?P<{pk_name}>[^/.]+)/(?P<related_field>\w+)/$',
                     list_method_view_set.as_view({'get': 'retrieve_related'}, name=f'related_{self._resource_name}'),
-                    name=f'related-{self._resource_name}'),
+                    name=f'related-{self._resource_name}{self._api_version}'),
                 url(
                     rf'^{urls_prefix}{url_resource_name}/(?P<{pk_name}>[^/.]+)/relationships/(?P<related_field>[^/.]+)$',
                     view=relationship_view.as_view(),
-                    name=f'{self._resource_name}-relationships'),
+                    name=f'{self._resource_name}{self._api_version}-relationships'),
             ])
 
         if plugins.DJANGO_SIMPLE_HISTORY not in self._skip_plugins:
@@ -482,6 +500,7 @@ class JsonApiModelViewBuilder:
 class JsonApiResourceViewBuilder:
     def __init__(self,
                  action_name: str = None,
+                 api_version: Optional[str] = '',
                  unique_identifier: Optional[str] = 'id',
                  allowed_methods=json_api_spec_http_methods.HTTP_ACTIONS,
                  permission_classes: Sequence[Type[BasePermission]] = None,
@@ -491,6 +510,8 @@ class JsonApiResourceViewBuilder:
         self._allowed_methods = [*allowed_methods]
         self._resource_name = action_name
         self._raw_items = not raw_items
+        self._api_version = api_version.replace('.', '').replace('-', '')
+        self._url_api_version = f'v{api_version}'
         self._unique_identifier = unique_identifier
         self._permission_classes = permission_classes or []
         self._authentication_classes = authentication_classes or []
@@ -523,7 +544,8 @@ class JsonApiResourceViewBuilder:
         self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_DELETE)
         return self
 
-    def on_list(self, list_callback: Callable[[Request], Tuple[List, List, int, int]] = None) -> 'JsonApiResourceViewBuilder':
+    def on_list(self,
+                list_callback: Callable[[Request], Tuple[List, List, int, int]] = None) -> 'JsonApiResourceViewBuilder':
         self._on_list_callback = list_callback
         self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_GET)
         return self
@@ -579,7 +601,8 @@ class JsonApiResourceViewBuilder:
             include = params.get('include', '')
             includes = include.split(',') if include else []
             if self._on_list_callback is not None:
-                data, included, count, status = self._on_list_callback(request, page, filters, includes, *args, **kwargs)
+                data, included, count, status = self._on_list_callback(request, page, filters, includes, *args,
+                                                                       **kwargs)
                 pages = math.ceil(count / self._page_size)
                 return Response(data={'links': {
                     "first": f"/api/{self._resource_name}?page_number=1",
@@ -592,12 +615,12 @@ class JsonApiResourceViewBuilder:
                     item in data],
                     'included': included if included else [],
                     'meta': {
-                    'pagination': {
-                        "page": page,
-                        "pages": pages,
-                        "count": count
+                        'pagination': {
+                            "page": page,
+                            "pages": pages,
+                            "count": count
+                        }
                     }
-                }
                 }, status=status)
 
         def get(view, request, *args, **kwargs):
@@ -610,7 +633,7 @@ class JsonApiResourceViewBuilder:
                                     status=status)
                 return Response(data=data, status=status)
 
-        patch_view_set = type(f'{self._resource_name}ChangeJSONApiActionViewSet', (ViewSet,), {
+        patch_view_set = type(f'{self._resource_name}ChangeJSONApiActionViewSet{self._api_version}', (ViewSet,), {
             'renderer_classes': (JSONRenderer, BrowsableAPIRenderer),
             'parser_classes': (JSONParser, FormParser, MultiPartParser),
             'metadata_class': JSONAPIMetadata,
@@ -626,7 +649,7 @@ class JsonApiResourceViewBuilder:
             'get': get if self._on_get_callback else None
         })
 
-        get_view_set = type(f'{self._resource_name}RetrieveJSONApiActionViewSet', (ViewSet,), {
+        get_view_set = type(f'{self._resource_name}RetrieveJSONApiActionViewSet{self._api_version}', (ViewSet,), {
             'renderer_classes': (JSONRenderer, BrowsableAPIRenderer),
             'parser_classes': (JSONParser, FormParser, MultiPartParser),
             'metadata_class': JSONAPIMetadata,
@@ -643,6 +666,12 @@ class JsonApiResourceViewBuilder:
 
         urls = []
 
+        if len(urls_prefix) > 0:
+            if len(self._url_api_version) > 1 and self._url_api_version not in urls_prefix:
+                urls_prefix = f'{urls_prefix.rstrip("/")}/{self._url_api_version}'
+        elif len(self._url_api_version) > 1:
+            urls_prefix = self._url_api_version
+
         if len(urls_prefix) > 0 and urls_prefix[-1] != '/':
             urls_prefix = f'{urls_prefix}/'
 
@@ -652,11 +681,11 @@ class JsonApiResourceViewBuilder:
         urls.extend([
             url(rf'^{urls_prefix}{url_resource_name}{urls_suffix}$',
                 get_view_set.as_view({'get': 'list', 'post': 'create'}, name=f'list_{self._resource_name}'),
-                name=f'list-{self._resource_name}'),
+                name=f'list-{self._resource_name}{self._api_version}'),
             url(rf'^{urls_prefix}{url_resource_name}{urls_suffix}/(?P<{self._unique_identifier}>[^/.]+)/$',
                 patch_view_set.as_view({'get': 'get', 'patch': 'update', 'delete': 'destroy'},
                                        name=f'get_{self._resource_name}'),
-                name=f'{self._resource_name}-detail')
+                name=f'{self._resource_name}{self._api_version}-detail')
         ])
         return urls
 
@@ -665,6 +694,7 @@ class JsonApiResourceViewBuilder:
 
 
 def json_api_view(resource_name: str,
+                  api_version: Optional[str] = '',
                   method: str = json_api_spec_http_methods.HTTP_GET,
                   permission_classes: Optional[Sequence[Type[BasePermission]]] = None,
                   authentication_classes: Optional[Sequence[Type[BaseAuthentication]]] = None,
@@ -674,6 +704,7 @@ def json_api_view(resource_name: str,
                   page_size: int = 50) -> FunctionType:
     def decorator(func: Callable[[Request], Tuple[Dict, int]]):
         builder = JsonApiResourceViewBuilder(action_name=resource_name,
+                                             api_version=api_version,
                                              allowed_methods=[method],
                                              permission_classes=permission_classes,
                                              authentication_classes=authentication_classes,
