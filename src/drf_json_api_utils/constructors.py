@@ -98,13 +98,13 @@ def _construct_serializer(serializer_prefix: str, serializer_suffix: str,
             relation.field] = f'drf_json_api_utils.namespace.{f"{serializer_prefix}{relation.resource_name}Serializer{relation.api_version}"}'
 
     for relation in generic_relations:
-        for related_model, relation_resource_name in getattr(relation, 'related', {}).items():
+        for related in getattr(relation, 'related', []):
             if relation.field not in included_generic_serializers:
                 included_generic_serializers[relation.field] = []
             included_generic_serializers[relation.field].append(
-                f'drf_json_api_utils.namespace.{f"{serializer_prefix}{relation_resource_name}Serializer{relation.api_version}"}')
+                f'drf_json_api_utils.namespace.{f"{serializer_prefix}{related.resource_name}Serializer{related.api_version}"}')
             included_serializers[
-                relation.field] = f'drf_json_api_utils.namespace.{f"{serializer_prefix}{relation_resource_name}Serializer{relation.api_version}"}'
+                relation.field] = f'drf_json_api_utils.namespace.{f"{serializer_prefix}{related.resource_name}Serializer{related.api_version}"}'
 
     def get_generic_included_serializers(serializer):
         included_serializers = copy.copy(getattr(serializer, 'included_generic_serializers', dict()))
@@ -235,18 +235,18 @@ def _construct_serializer(serializer_prefix: str, serializer_suffix: str,
         ) for relation in relations if hasattr(model, relation.field)},
         **{relation.field: GenericRelatedField(
             {
-                related_model: generate_generic_resource(related_model)(
+                related.model: generate_generic_resource(related.model)(
                     queryset=getattr(model, relation.field).get_queryset()
                     if hasattr(getattr(model, relation.field), 'get_queryset')
-                    else related_model.objects.all(),
+                    else related.model.objects.all(),
                     many=relation.many,
                     required=getattr(relation, 'required', False),
-                    related_link_view_name=f'{relation_resource_name}{relation.api_version}-detail',
+                    related_link_view_name=f'{related.resource_name}{related.api_version}-detail',
                     related_link_lookup_field=primary_key_name,
                     related_link_url_kwarg='id',
                     self_link_view_name=f'{resource_name}{serializer_suffix}-relationships'
                 )
-                for related_model, relation_resource_name in getattr(relation, 'related', {}).items()
+                for related in getattr(relation, 'related', [])
             },
             self_link_view_name=f'{resource_name}{serializer_suffix}-relationships',
             related_link_lookup_field=primary_key_name) for relation in generic_relations if
