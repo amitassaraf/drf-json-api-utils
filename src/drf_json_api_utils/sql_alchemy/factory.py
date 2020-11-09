@@ -2,6 +2,7 @@ from copy import deepcopy
 from functools import partial
 from typing import Type, Sequence, Tuple, Dict, List, Optional, Callable, Any
 
+import traceback
 from marshmallow import INCLUDE
 from marshmallow import ValidationError
 from rest_framework.authentication import BaseAuthentication
@@ -34,7 +35,7 @@ class AlchemyJsonApiViewBuilder:
                  api_version: Optional[str] = '',
                  primary_key: Optional[str] = 'id',
                  allowed_methods: Optional[Sequence[str]] = json_api_spec_http_methods.HTTP_ACTIONS,
-                 base_query: Optional[Query] = None,
+                 base_query: Optional[Callable[[Any], Query]] = None,
                  permitted_objects: Optional[Callable[[Request, Query], Query]] = None,
                  permission_classes: Sequence[Type[BasePermission]] = None,
                  authentication_classes: Sequence[Type[BaseAuthentication]] = None,
@@ -220,7 +221,8 @@ class AlchemyJsonApiViewBuilder:
         permitted_objects = self._permitted_objects or default_permitted_objects
 
         def object_get(request, identifier, *args, **kwargs) -> Tuple[Dict, int]:
-            permitted_query = permitted_objects(request, self._base_query or self._model.objects.query())
+            permitted_query = permitted_objects(request,
+                                                self._base_query() if self._base_query is not None else self._model.objects.query())
 
             obj = None
 
@@ -239,7 +241,8 @@ class AlchemyJsonApiViewBuilder:
             return result, HTTP_200_OK
 
         def object_list(request, page, filters=None, includes=None, *args, **kwargs) -> Tuple[List, List, int, int]:
-            permitted_query = permitted_objects(request, self._base_query or self._model.objects.query())
+            permitted_query = permitted_objects(request,
+                                                self._base_query() if self._base_query is not None else self._model.objects.query())
             #
             #  Apply all the filters from the URL
             #
@@ -287,6 +290,7 @@ class AlchemyJsonApiViewBuilder:
                 try:
                     attributes = self._before_create_callback(request, attributes)
                 except Exception as e:
+                    traceback.print_exc()
                     return {'errors': [str(e)]}, '', getattr(e, 'http_status', HTTP_500_INTERNAL_SERVER_ERROR)
 
             try:
@@ -301,6 +305,7 @@ class AlchemyJsonApiViewBuilder:
                 try:
                     self._after_create_callback(request, attributes, obj)
                 except Exception as e:
+                    traceback.print_exc()
                     return {'errors': [str(e)]}, '', getattr(e, 'http_status', HTTP_500_INTERNAL_SERVER_ERROR)
                 obj.refresh_from_db()
 
@@ -308,7 +313,8 @@ class AlchemyJsonApiViewBuilder:
             return result, obj.id, HTTP_201_CREATED
 
         def object_update(request, identifier, data, *args, **kwargs) -> Tuple[Dict, int]:
-            permitted_query = permitted_objects(request, self._base_query or self._model.objects.query())
+            permitted_query = permitted_objects(request,
+                                                self._base_query() if self._base_query is not None else self._model.objects.query())
             obj = None
             try:
                 obj = permitted_query.filter_by(**{self._primary_key or 'id': identifier}).first()
@@ -323,6 +329,7 @@ class AlchemyJsonApiViewBuilder:
                 try:
                     attributes = self._before_update_callback(request, attributes, obj)
                 except Exception as e:
+                    traceback.print_exc()
                     return {'errors': [str(e)]}, getattr(e, 'http_status', HTTP_500_INTERNAL_SERVER_ERROR)
                 obj.refresh_from_db()
 
@@ -335,6 +342,7 @@ class AlchemyJsonApiViewBuilder:
                 try:
                     self._after_update_callback(request, obj)
                 except Exception as e:
+                    traceback.print_exc()
                     return {'errors': [str(e)]}, getattr(e, 'http_status', HTTP_500_INTERNAL_SERVER_ERROR)
                 obj.refresh_from_db()
 
@@ -342,12 +350,14 @@ class AlchemyJsonApiViewBuilder:
             return result, HTTP_200_OK
 
         def object_delete(request, identifier, *args, **kwargs) -> Tuple[int]:
-            permitted_query = permitted_objects(request, self._base_query or self._model.objects.query())
+            permitted_query = permitted_objects(request,
+                                                self._base_query() if self._base_query is not None else self._model.objects.query())
             obj = permitted_query.filter_by(**{self._primary_key or 'id': identifier}).first()
             if self._before_delete_callback:
                 try:
                     obj = self._before_delete_callback(request, obj)
                 except Exception as e:
+                    traceback.print_exc()
                     return getattr(e, 'http_status', HTTP_500_INTERNAL_SERVER_ERROR)
             if obj:
                 obj.delete()
@@ -356,6 +366,7 @@ class AlchemyJsonApiViewBuilder:
                     try:
                         self._after_delete_callback(request, obj)
                     except Exception as e:
+                        traceback.print_exc()
                         return getattr(e, 'http_status', HTTP_500_INTERNAL_SERVER_ERROR)
             return HTTP_204_NO_CONTENT
 

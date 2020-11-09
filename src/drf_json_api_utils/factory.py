@@ -29,7 +29,7 @@ from . import plugins
 from .common import LimitedJsonApiPageNumberPagination, JsonApiSearchFilter, LOGGER
 from .constructors import _construct_serializer, _construct_filter_backend
 from .namespace import _append_to_namespace, _RESOURCE_NAME_TO_SPICE, _MODEL_TO_SERIALIZERS
-from .types import CustomField, Filter, Relation, GenericRelation, ComputedFilter
+from .types import CustomField, Filter, Relation, GenericRelation, ComputedFilter, RelatedResource
 
 FILTER_REGEX = re.compile(r'filter\[(?P<field>[\w_\-]+)(?P<op>\.[\w_\-]+)?\]', re.IGNORECASE)
 FILTER_MAP = {
@@ -169,7 +169,8 @@ class JsonApiModelViewBuilder:
             self._relations[limit_to_on_retrieve] = []
         self._relations[limit_to_on_retrieve].append(
             Relation(field=field, resource_name=resource_name or field, many=many,
-                     primary_key_name=primary_key_name, required=required, api_version=api_version))
+                     primary_key_name=primary_key_name, required=required,
+                     api_version=api_version.replace('.', '').replace('-', '')))
         return self
 
     def rl(self, field: str, many: bool = False, resource_name: str = None,
@@ -177,17 +178,23 @@ class JsonApiModelViewBuilder:
            limit_to_on_retrieve: bool = False,
            required: bool = False, api_version: Optional[str] = '') -> 'JsonApiModelViewBuilder':
         return self.add_relation(field=field, many=many, resource_name=resource_name, primary_key_name=primary_key_name,
-                                 limit_to_on_retrieve=limit_to_on_retrieve, required=required, api_version=api_version)
+                                 limit_to_on_retrieve=limit_to_on_retrieve, required=required,
+                                 api_version=api_version.replace('.', '').replace('-', ''))
 
     def add_generic_relation(self, field: str,
-                             related: Dict[Type[Model], str],
+                             related: Sequence[RelatedResource],
                              many: bool = False,
                              limit_to_on_retrieve: bool = False,
-                             required: bool = False, api_version: Optional[str] = '') -> 'JsonApiModelViewBuilder':
+                             required: bool = False) -> 'JsonApiModelViewBuilder':
         if limit_to_on_retrieve not in self._generic_relations:
             self._generic_relations[limit_to_on_retrieve] = []
+        api_fixed_related = []
+        for rel in related:
+            rel.api_version = rel.api_version.replace('.', '').replace('-', '')
+            api_fixed_related.append(rel)
+            
         self._generic_relations[limit_to_on_retrieve].append(
-            GenericRelation(field=field, related=related, many=many, required=required, api_version=api_version))
+            GenericRelation(field=field, related=api_fixed_related, many=many, required=required))
         return self
 
     def add_custom_field(self, name: str, instance_callback: Callable[[Any], Any] = None,
@@ -413,26 +420,30 @@ class JsonApiModelViewBuilder:
 
         urls = []
         for pk_name in ['pk', self._primary_key_name]:
-            relationship_view = type(f'{self._resource_name}RelationshipsView{self._api_version}', (RelationshipView,), {
-                'get_queryset': get_queryset,
-                'lookup_field': pk_name
-            })
+            relationship_view = type(f'{self._resource_name}RelationshipsView{self._api_version}', (RelationshipView,),
+                                     {
+                                         'get_queryset': get_queryset,
+                                         'lookup_field': pk_name
+                                     })
 
-            list_method_view_set = type(f'List{self._resource_name}ViewSet{self._api_version}', (base_model_view_set,), {
-                'get_queryset': get_queryset,
-                'serializer_class': method_to_serializer[False],
-                'http_method_names': list(map(lambda method: method.lower(),
-                                              filter(lambda method: method in [json_api_spec_http_methods.HTTP_GET,
-                                                                               json_api_spec_http_methods.HTTP_POST],
-                                                     self._allowed_methods))) + ['head', 'options'],
-                'permission_classes': self._permission_classes,
-                'authentication_classes': self._authentication_classes,
-                'filterset_class': filter_set,
-                'lookup_field': pk_name,
-                'perform_create': perform_create,
-                'name': f'list {self._resource_name}',
-                'list': perform_list
-            })
+            list_method_view_set = type(f'List{self._resource_name}ViewSet{self._api_version}', (base_model_view_set,),
+                                        {
+                                            'get_queryset': get_queryset,
+                                            'serializer_class': method_to_serializer[False],
+                                            'http_method_names': list(map(lambda method: method.lower(),
+                                                                          filter(lambda method: method in [
+                                                                              json_api_spec_http_methods.HTTP_GET,
+                                                                              json_api_spec_http_methods.HTTP_POST],
+                                                                                 self._allowed_methods))) + ['head',
+                                                                                                             'options'],
+                                            'permission_classes': self._permission_classes,
+                                            'authentication_classes': self._authentication_classes,
+                                            'filterset_class': filter_set,
+                                            'lookup_field': pk_name,
+                                            'perform_create': perform_create,
+                                            'name': f'list {self._resource_name}',
+                                            'list': perform_list
+                                        })
 
             get_method_view_set = type(f'Get{self._resource_name}ViewSet{self._api_version}', (base_model_view_set,), {
                 'get_queryset': get_queryset,

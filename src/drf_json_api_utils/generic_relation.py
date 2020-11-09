@@ -37,6 +37,8 @@ class GenericRelatedField(UpdatedGenericSerializerMixin, ResourceRelatedField, m
         #         AuthorBioViewSet.as_view({'get': 'retrieve'}))
         # So, if related_link_url_kwarg == 'pk' it will add 'related_field' parameter to reverse()
         related_instance = getattr(obj, self.field_name)
+        print(related_instance)
+
         if related_instance is not None:
             serializer = self.get_serializer_for_instance(related_instance)
             if serializer.related_link_url_kwarg == 'pk':
