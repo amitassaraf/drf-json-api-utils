@@ -276,6 +276,7 @@ class AlchemyJsonApiViewBuilder:
                 try:
                     objects = self._after_list_callback(request, objects)
                 except Exception as e:
+                    traceback.print_exc()
                     return [{'errors': [str(e)]}], [], 0, getattr(e, 'http_status', HTTP_500_INTERNAL_SERVER_ERROR)
 
             result = schema_many.json_api_dump(objects, self._resource_name)

@@ -206,7 +206,7 @@ def _construct_serializer(serializer_prefix: str, serializer_suffix: str,
             if isinstance(instance, (list, QuerySet)) and len(instance) > 0:
                 check_instance = instance[0]
             if check_instance is not None and not isinstance(check_instance, (cls.Meta.model, list, QuerySet)):
-                serial = list(filter(lambda serial: serial.__class__.__name__.startswith(serializer_prefix),
+                serial = list(filter(lambda serial: serial.__name__.startswith(serializer_prefix),
                             _MODEL_TO_SERIALIZERS[type(check_instance)]))
                 return serial[-1](instance=instance, *args, **kwargs)
             return super(GenericSerializer, cls).__new__(cls, instance=instance, *args, **kwargs)
