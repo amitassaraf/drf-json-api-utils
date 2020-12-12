@@ -38,6 +38,7 @@ class ExtendModelConverter(ModelConverter):
 
 def auto_construct_schema(alchemy_model: Type,
                           resource_name: str,
+                          api_version: str,
                           fields: Sequence[str],
                           support_relations: Optional[List[AlchemyRelation]] = None,
                           custom_field_handlers: Optional[Dict[Type, Callable]] = None,
@@ -178,5 +179,9 @@ def auto_construct_schema(alchemy_model: Type,
         'json_api_dump': json_api_dump,
         'db': alchemy_model.db
     })
-    _TYPE_TO_SCHEMA[alchemy_model] = {'serializer': new_serializer, 'resource_name': resource_name}
+
+    if alchemy_model not in _TYPE_TO_SCHEMA:
+        _TYPE_TO_SCHEMA[alchemy_model] = []
+    _TYPE_TO_SCHEMA[alchemy_model].append({'serializer': new_serializer, 'resource_name': resource_name,
+                                          'api_version': api_version})
     return new_serializer

@@ -167,10 +167,12 @@ class AlchemyJsonApiViewBuilder:
 
     def get_urls(self, url_resource_name: str = '', urls_prefix: str = '', ignore_serializer: bool = False):
         if ignore_serializer:
-            SchemaType = _TYPE_TO_SCHEMA[self._model]['serializer']
+            SchemaType = list(filter(lambda item: item['api_version'] == self._api_version,
+                                     _TYPE_TO_SCHEMA[self._model]))[0]['serializer']
         else:
             SchemaType = auto_construct_schema(self._model,
                                                resource_name=self._resource_name,
+                                               api_version=self._api_version,
                                                fields=self._fields,
                                                support_relations=self._relations,
                                                custom_field_handlers=self._custom_field_handlers,
@@ -208,7 +210,8 @@ class AlchemyJsonApiViewBuilder:
                                                                          [getattr(item, local_column.name) for item in
                                                                           objects]
                                                                      )).all()
-                    schema = _TYPE_TO_SCHEMA[target_model]
+                    schema = list(filter(lambda item: item['api_version'] == self._api_version,
+                                _TYPE_TO_SCHEMA[target_model]))[0]
                     target_many = schema['serializer'](many=True)
                     #  Serialize all the included objects to JSON:API
                     include_result = target_many.json_api_dump(to_include, schema['resource_name'],
