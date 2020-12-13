@@ -392,7 +392,7 @@ class JsonApiModelViewBuilder:
                 response = Response(serializer.data)
 
             if self._after_list_callback is not None:
-                response.data = self._after_list_callback(response.data)
+                response.data = self._after_list_callback(request, response.data)
             return response
 
         base_model_view_set = type(f'{self._resource_name}JSONApiModelViewSet{self._api_version}', (ModelViewSet,), {

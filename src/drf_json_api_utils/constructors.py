@@ -215,7 +215,7 @@ def _construct_serializer(serializer_prefix: str, serializer_suffix: str,
         def data(self):
             ret = super().data
             if after_list_callback is not None:
-                ret = after_list_callback({'results': [ret]})['results'][0]
+                ret = after_list_callback(self.context['request'], {'results': [ret]})['results'][0]
             return ReturnDict(ret, serializer=self)
 
     new_serializer = type(f'{serializer_prefix}{resource_name}Serializer{serializer_suffix}', (GenericSerializer,), {
