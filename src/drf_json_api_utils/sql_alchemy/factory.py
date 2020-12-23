@@ -251,14 +251,15 @@ class AlchemyJsonApiViewBuilder:
             #
             if filters:
                 filtered_query = permitted_query
+                copied_filters = filters[:]
                 for filter in filters:
                     field = filter['field']
                     if field in self._computed_filters:
                         copied_filter = dict(filter)
                         copied_filter.pop('field')
                         filtered_query = self._computed_filters[field].filter_func(filtered_query, **copied_filter)
-                        filters.remove(filter)
-                filtered_query = apply_filters(filtered_query, filters)
+                        copied_filters.remove(filter)
+                filtered_query = apply_filters(filtered_query, copied_filters)
             else:
                 filtered_query = permitted_query
 
