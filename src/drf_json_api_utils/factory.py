@@ -13,7 +13,6 @@ from django.db.models import QuerySet, Model
 from rest_framework.authentication import BaseAuthentication
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import BasePermission
-from rest_framework.renderers import BrowsableAPIRenderer
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.viewsets import ViewSet
@@ -396,7 +395,7 @@ class JsonApiModelViewBuilder:
             return response
 
         base_model_view_set = type(f'{self._resource_name}JSONApiModelViewSet{self._api_version}', (ModelViewSet,), {
-            'renderer_classes': (JSONRenderer, BrowsableAPIRenderer),
+            'renderer_classes': (JSONRenderer,),
             'parser_classes': (JSONParser, FormParser, MultiPartParser),
             'metadata_class': JSONAPIMetadata,
             'pagination_class': LimitedJsonApiPageNumberPagination,
@@ -645,7 +644,7 @@ class JsonApiResourceViewBuilder:
                 return Response(data=data, status=status)
 
         patch_view_set = type(f'{self._resource_name}ChangeJSONApiActionViewSet{self._api_version}', (ViewSet,), {
-            'renderer_classes': (JSONRenderer, BrowsableAPIRenderer),
+            'renderer_classes': (JSONRenderer,),
             'parser_classes': (JSONParser, FormParser, MultiPartParser),
             'metadata_class': JSONAPIMetadata,
             'pagination_class': LimitedJsonApiPageNumberPagination,
@@ -661,7 +660,7 @@ class JsonApiResourceViewBuilder:
         })
 
         get_view_set = type(f'{self._resource_name}RetrieveJSONApiActionViewSet{self._api_version}', (ViewSet,), {
-            'renderer_classes': (JSONRenderer, BrowsableAPIRenderer),
+            'renderer_classes': (JSONRenderer,),
             'parser_classes': (JSONParser, FormParser, MultiPartParser),
             'metadata_class': JSONAPIMetadata,
             'pagination_class': LimitedJsonApiPageNumberPagination,
