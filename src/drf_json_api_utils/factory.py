@@ -516,6 +516,7 @@ class JsonApiResourceViewBuilder:
                  permission_classes: Sequence[Type[BasePermission]] = None,
                  authentication_classes: Sequence[Type[BaseAuthentication]] = None,
                  raw_items=False,
+                 only_callbacks: Optional[bool] = False,
                  page_size: int = 50):
         self._allowed_methods = [*allowed_methods]
         self._resource_name = action_name
@@ -531,6 +532,7 @@ class JsonApiResourceViewBuilder:
         self._on_list_callback = None
         self._on_get_callback = None
         self._page_size = page_size
+        self._only_callbacks = only_callbacks
 
     def __warn_if_method_not_available(self, method: str):
         if method not in self._allowed_methods:
@@ -643,36 +645,40 @@ class JsonApiResourceViewBuilder:
                                     status=status)
                 return Response(data=data, status=status)
 
-        patch_view_set = type(f'{self._resource_name}ChangeJSONApiActionViewSet{self._api_version}', (ViewSet,), {
-            'renderer_classes': (JSONRenderer,),
-            'parser_classes': (JSONParser, FormParser, MultiPartParser),
-            'metadata_class': JSONAPIMetadata,
-            'pagination_class': LimitedJsonApiPageNumberPagination,
-            'filter_backends': (
-                QueryParameterValidationFilter, OrderingFilter, JsonApiSearchFilter),
-            'resource_name': self._resource_name,
-            'http_method_names': list(map(lambda method: method.lower(), self._allowed_methods)) + ['head', 'options'],
-            'permission_classes': self._permission_classes,
-            'authentication_classes': self._authentication_classes,
-            'update': update if self._on_update_callback else None,
-            'destroy': destroy if self._on_delete_callback else None,
-            'get': get if self._on_get_callback else None
-        })
+        patch_view_set = None
+        if any([self._on_update_callback, self._on_delete_callback, self._on_get_callback]) or not self._only_callbacks:
+            patch_view_set = type(f'{self._resource_name}ChangeJSONApiActionViewSet{self._api_version}', (ViewSet,), {
+                'renderer_classes': (JSONRenderer,),
+                'parser_classes': (JSONParser, FormParser, MultiPartParser),
+                'metadata_class': JSONAPIMetadata,
+                'pagination_class': LimitedJsonApiPageNumberPagination,
+                'filter_backends': (
+                    QueryParameterValidationFilter, OrderingFilter, JsonApiSearchFilter),
+                'resource_name': self._resource_name,
+                'http_method_names': list(map(lambda method: method.lower(), self._allowed_methods)) + ['head', 'options'],
+                'permission_classes': self._permission_classes,
+                'authentication_classes': self._authentication_classes,
+                'update': update if self._on_update_callback else None,
+                'destroy': destroy if self._on_delete_callback else None,
+                'get': get if self._on_get_callback else None
+            })
 
-        get_view_set = type(f'{self._resource_name}RetrieveJSONApiActionViewSet{self._api_version}', (ViewSet,), {
-            'renderer_classes': (JSONRenderer,),
-            'parser_classes': (JSONParser, FormParser, MultiPartParser),
-            'metadata_class': JSONAPIMetadata,
-            'pagination_class': LimitedJsonApiPageNumberPagination,
-            'filter_backends': (
-                QueryParameterValidationFilter, OrderingFilter, JsonApiSearchFilter),
-            'resource_name': None,
-            'http_method_names': list(map(lambda method: method.lower(), self._allowed_methods)) + ['head', 'options'],
-            'permission_classes': self._permission_classes,
-            'authentication_classes': self._authentication_classes,
-            'list': _list if self._on_list_callback else None,
-            'create': create if self._on_create_callback else None,
-        })
+        get_view_set = None
+        if any([self._on_list_callback, self._on_create_callback]) or not self._only_callbacks:
+            get_view_set = type(f'{self._resource_name}RetrieveJSONApiActionViewSet{self._api_version}', (ViewSet,), {
+                'renderer_classes': (JSONRenderer,),
+                'parser_classes': (JSONParser, FormParser, MultiPartParser),
+                'metadata_class': JSONAPIMetadata,
+                'pagination_class': LimitedJsonApiPageNumberPagination,
+                'filter_backends': (
+                    QueryParameterValidationFilter, OrderingFilter, JsonApiSearchFilter),
+                'resource_name': None,
+                'http_method_names': list(map(lambda method: method.lower(), self._allowed_methods)) + ['head', 'options'],
+                'permission_classes': self._permission_classes,
+                'authentication_classes': self._authentication_classes,
+                'list': _list if self._on_list_callback else None,
+                'create': create if self._on_create_callback else None,
+            })
 
         urls = []
 
@@ -688,15 +694,19 @@ class JsonApiResourceViewBuilder:
         if len(url_resource_name) == 0:
             url_resource_name = self._resource_name
 
-        urls.extend([
-            url(rf'^{urls_prefix}{url_resource_name}{urls_suffix}$',
-                get_view_set.as_view({'get': 'list', 'post': 'create'}, name=f'list_{self._resource_name}'),
-                name=f'list-{self._resource_name}{self._api_version}'),
-            url(rf'^{urls_prefix}{url_resource_name}{urls_suffix}/(?P<{self._unique_identifier}>[^/.]+)/$',
-                patch_view_set.as_view({'get': 'get', 'patch': 'update', 'delete': 'destroy'},
-                                       name=f'get_{self._resource_name}'),
-                name=f'{self._resource_name}{self._api_version}-detail')
-        ])
+        if get_view_set is not None:
+            urls.extend([
+                url(rf'^{urls_prefix}{url_resource_name}{urls_suffix}$',
+                    get_view_set.as_view({'get': 'list', 'post': 'create'}, name=f'list_{self._resource_name}'),
+                    name=f'list-{self._resource_name}{self._api_version}')
+            ])
+        if patch_view_set is not None:
+            urls.extend([
+                url(rf'^{urls_prefix}{url_resource_name}{urls_suffix}/(?P<{self._unique_identifier}>[^/.]+)/$',
+                    patch_view_set.as_view({'get': 'get', 'patch': 'update', 'delete': 'destroy'},
+                                           name=f'get_{self._resource_name}'),
+                    name=f'{self._resource_name}{self._api_version}-detail')
+            ])
         return urls
 
     def get_urls(self, url_resource_name: str = '', urls_prefix: str = '', urls_suffix: str = '') -> Sequence[partial]:
@@ -711,6 +721,7 @@ def json_api_view(resource_name: str,
                   urls_prefix: str = '',
                   urls_suffix: str = '',
                   multiple_resource=True,
+                  raw_items=False,
                   page_size: int = 50) -> FunctionType:
     def decorator(func: Callable[[Request], Tuple[Dict, int]]):
         builder = JsonApiResourceViewBuilder(action_name=resource_name,
@@ -718,7 +729,9 @@ def json_api_view(resource_name: str,
                                              allowed_methods=[method],
                                              permission_classes=permission_classes,
                                              authentication_classes=authentication_classes,
-                                             page_size=page_size)
+                                             raw_items=raw_items,
+                                             page_size=page_size,
+                                             only_callbacks=True)
         if method == json_api_spec_http_methods.HTTP_GET and multiple_resource:
             return builder.on_list(list_callback=func) \
                 .get_urls(urls_prefix=urls_prefix, urls_suffix=urls_suffix)
