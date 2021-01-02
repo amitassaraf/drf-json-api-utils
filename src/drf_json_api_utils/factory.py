@@ -91,6 +91,7 @@ class JsonApiModelViewBuilder:
         self._after_delete_callback = None
         self._before_list_callback = None
         self._after_list_callback = None
+        self._before_raw_response = None
         self._is_admin = False
         if queryset is None:
             self._queryset = self._model.objects
@@ -191,7 +192,7 @@ class JsonApiModelViewBuilder:
         for rel in related:
             rel.api_version = rel.api_version.replace('.', '').replace('-', '')
             api_fixed_related.append(rel)
-            
+
         self._generic_relations[limit_to_on_retrieve].append(
             GenericRelation(field=field, related=api_fixed_related, many=many, required=required))
         return self
@@ -261,6 +262,10 @@ class JsonApiModelViewBuilder:
         self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_GET)
         return self
 
+    def before_response(self, before_raw_response: Callable[[str], str] = None) -> 'JsonApiModelViewBuilder':
+        self._before_raw_response = before_raw_response
+        return self
+
     def _get_history_urls(self) -> Sequence[partial]:
         history_builder = deepcopy(self)
         if plugins.AUTO_ADMIN_VIEWS not in history_builder._skip_plugins:
@@ -280,11 +285,11 @@ class JsonApiModelViewBuilder:
             .add_filter(name='history_id', lookups=(filter_lookups.EXACT, filter_lookups.IN)) \
             .add_filter(name='history_change_reason', lookups=(filter_lookups.EXACT, filter_lookups.IN)) \
             .add_filter(name='history_type', lookups=(filter_lookups.EXACT, filter_lookups.IN)) \
-            .get_urls(urls_prefix='history/', url_resource_name=self._resource_name)
+            .get_urls(urls_prefix='history/', url_resource_name=self._resource_name, ignore_swagger=True)
 
         return history_urls
 
-    def _get_admin_urls(self) -> Sequence[partial]:
+    def _get_admin_urls(self, ignore_swagger: bool = False) -> Sequence[partial]:
         admin_builder = deepcopy(self)
         admin_builder._skip_plugins = [plugins.AUTO_ADMIN_VIEWS]
         admin_builder._spice_queryset = None
@@ -302,11 +307,12 @@ class JsonApiModelViewBuilder:
             admin_builder._permission_classes = [*admin_builder._permission_classes, admin_permission_class]
 
         admin_urls = admin_builder._build(url_resource_name=self._resource_name, urls_prefix='admin/',
-                                          ignore_serializer=False)
+                                          ignore_serializer=False, ignore_swagger=ignore_swagger)
 
         return admin_urls
 
-    def _build(self, url_resource_name: str = '', urls_prefix: str = '', ignore_serializer: bool = False) -> Sequence[
+    def _build(self, url_resource_name: str = '', urls_prefix: str = '', ignore_serializer: bool = False,
+               ignore_swagger: bool = False) -> Sequence[
         partial]:
         method_to_serializer = {}
         if not ignore_serializer:
@@ -394,8 +400,17 @@ class JsonApiModelViewBuilder:
                 response.data = self._after_list_callback(request, response.data)
             return response
 
+        class Renderer(JSONRenderer):
+            def render(inner_self, data, accepted_media_type=None, renderer_context=None):
+                response = super(Renderer, inner_self).render(
+                    data, accepted_media_type, renderer_context
+                )
+                if self._before_raw_response:
+                    response = self._before_raw_response(response)
+                return str.encode(response)
+
         base_model_view_set = type(f'{self._resource_name}JSONApiModelViewSet{self._api_version}', (ModelViewSet,), {
-            'renderer_classes': (JSONRenderer,),
+            'renderer_classes': (Renderer,),
             'parser_classes': (JSONParser, FormParser, MultiPartParser),
             'metadata_class': JSONAPIMetadata,
             'pagination_class': LimitedJsonApiPageNumberPagination,
@@ -403,6 +418,9 @@ class JsonApiModelViewBuilder:
                 QueryParameterValidationFilter, OrderingFilter, filter_backend, JsonApiSearchFilter),
             'resource_name': self._resource_name,
         })
+
+        if ignore_swagger:
+            base_model_view_set.swagger_schema = None
 
         def get_queryset(view):
             if self._queryset is None:
@@ -424,6 +442,9 @@ class JsonApiModelViewBuilder:
                                          'get_queryset': get_queryset,
                                          'lookup_field': pk_name
                                      })
+
+            if ignore_swagger:
+                relationship_view.swagger_schema = None
 
             list_method_view_set = type(f'List{self._resource_name}ViewSet{self._api_version}', (base_model_view_set,),
                                         {
@@ -499,12 +520,13 @@ class JsonApiModelViewBuilder:
                 pass
 
         if plugins.AUTO_ADMIN_VIEWS not in self._skip_plugins:
-            urls.extend(self._get_admin_urls())
+            urls.extend(self._get_admin_urls(ignore_swagger=ignore_swagger))
 
         return urls
 
-    def get_urls(self, url_resource_name: str = '', urls_prefix: str = '') -> Sequence[partial]:
-        return self._build(url_resource_name=url_resource_name, urls_prefix=urls_prefix)
+    def get_urls(self, url_resource_name: str = '', urls_prefix: str = '', ignore_swagger: bool = False) -> Sequence[
+        partial]:
+        return self._build(url_resource_name=url_resource_name, urls_prefix=urls_prefix, ignore_swagger=ignore_swagger)
 
 
 class JsonApiResourceViewBuilder:
@@ -531,6 +553,7 @@ class JsonApiResourceViewBuilder:
         self._on_delete_callback = None
         self._on_list_callback = None
         self._on_get_callback = None
+        self._before_raw_response = None
         self._page_size = page_size
         self._only_callbacks = only_callbacks
 
@@ -567,7 +590,12 @@ class JsonApiResourceViewBuilder:
         self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_GET)
         return self
 
-    def _build(self, url_resource_name: str = '', urls_prefix: str = '', urls_suffix: str = '') -> Sequence[partial]:
+    def before_response(self, before_raw_response: Callable[[str], str] = None) -> 'JsonApiResourceViewBuilder':
+        self._before_raw_response = before_raw_response
+        return self
+
+    def _build(self, url_resource_name: str = '', urls_prefix: str = '', urls_suffix: str = '',
+               ignore_swagger: bool = False) -> Sequence[partial]:
         def destroy(view, request, *args, **kwargs):
             identifier = kwargs.get(self._unique_identifier, None)
 
@@ -645,40 +673,55 @@ class JsonApiResourceViewBuilder:
                                     status=status)
                 return Response(data=data, status=status)
 
+        class Renderer(JSONRenderer):
+            def render(inner_self, data, accepted_media_type=None, renderer_context=None):
+                response = super(Renderer, inner_self).render(
+                    data, accepted_media_type, renderer_context
+                )
+                if self._before_raw_response:
+                    response = self._before_raw_response(response)
+                return str.encode(response)
+
         patch_view_set = None
         if any([self._on_update_callback, self._on_delete_callback, self._on_get_callback]) or not self._only_callbacks:
             patch_view_set = type(f'{self._resource_name}ChangeJSONApiActionViewSet{self._api_version}', (ViewSet,), {
-                'renderer_classes': (JSONRenderer,),
+                'renderer_classes': (Renderer,),
                 'parser_classes': (JSONParser, FormParser, MultiPartParser),
                 'metadata_class': JSONAPIMetadata,
                 'pagination_class': LimitedJsonApiPageNumberPagination,
                 'filter_backends': (
                     QueryParameterValidationFilter, OrderingFilter, JsonApiSearchFilter),
                 'resource_name': self._resource_name,
-                'http_method_names': list(map(lambda method: method.lower(), self._allowed_methods)) + ['head', 'options'],
+                'http_method_names': list(map(lambda method: method.lower(), self._allowed_methods)) + ['head',
+                                                                                                        'options'],
                 'permission_classes': self._permission_classes,
                 'authentication_classes': self._authentication_classes,
                 'update': update if self._on_update_callback else None,
                 'destroy': destroy if self._on_delete_callback else None,
                 'get': get if self._on_get_callback else None
             })
+            if ignore_swagger:
+                patch_view_set.swagger_schema = None
 
         get_view_set = None
         if any([self._on_list_callback, self._on_create_callback]) or not self._only_callbacks:
             get_view_set = type(f'{self._resource_name}RetrieveJSONApiActionViewSet{self._api_version}', (ViewSet,), {
-                'renderer_classes': (JSONRenderer,),
+                'renderer_classes': (Renderer,),
                 'parser_classes': (JSONParser, FormParser, MultiPartParser),
                 'metadata_class': JSONAPIMetadata,
                 'pagination_class': LimitedJsonApiPageNumberPagination,
                 'filter_backends': (
                     QueryParameterValidationFilter, OrderingFilter, JsonApiSearchFilter),
                 'resource_name': None,
-                'http_method_names': list(map(lambda method: method.lower(), self._allowed_methods)) + ['head', 'options'],
+                'http_method_names': list(map(lambda method: method.lower(), self._allowed_methods)) + ['head',
+                                                                                                        'options'],
                 'permission_classes': self._permission_classes,
                 'authentication_classes': self._authentication_classes,
                 'list': _list if self._on_list_callback else None,
                 'create': create if self._on_create_callback else None,
             })
+            if ignore_swagger:
+                get_view_set.swagger_schema = None
 
         urls = []
 
@@ -709,8 +752,10 @@ class JsonApiResourceViewBuilder:
             ])
         return urls
 
-    def get_urls(self, url_resource_name: str = '', urls_prefix: str = '', urls_suffix: str = '') -> Sequence[partial]:
-        return self._build(url_resource_name=url_resource_name, urls_prefix=urls_prefix, urls_suffix=urls_suffix)
+    def get_urls(self, url_resource_name: str = '', urls_prefix: str = '', urls_suffix: str = '',
+                 ignore_swagger: bool = False) -> Sequence[partial]:
+        return self._build(url_resource_name=url_resource_name, urls_prefix=urls_prefix, urls_suffix=urls_suffix,
+                           ignore_swagger=ignore_swagger)
 
 
 def json_api_view(resource_name: str,
