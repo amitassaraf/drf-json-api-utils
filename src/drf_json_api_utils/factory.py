@@ -293,15 +293,10 @@ class JsonApiModelViewBuilder:
         admin_builder = deepcopy(self)
         admin_builder._skip_plugins = [plugins.AUTO_ADMIN_VIEWS]
         admin_builder._spice_queryset = None
-        admin_builder._resource_name = f'admin_view_{admin_builder._resource_name.replace("admin_view_", "")}'
+        admin_builder._resource_name = f'{admin_builder._resource_name}'
         admin_permission_class = admin_builder._plugin_options.get(plugins.AUTO_ADMIN_VIEWS, {}).get(
             'ADMIN_PERMISSION_CLASS')
         admin_builder._is_admin = True
-
-        for limit_to_on_retrieve in [False, True]:
-            if limit_to_on_retrieve in admin_builder._relations:
-                for relation in admin_builder._relations[limit_to_on_retrieve]:
-                    relation.resource_name = f'admin_view_{relation.resource_name.replace("admin_view_", "")}'
 
         if admin_permission_class is not None:
             admin_builder._permission_classes = [*admin_builder._permission_classes, admin_permission_class]
@@ -407,7 +402,9 @@ class JsonApiModelViewBuilder:
                 )
                 if self._before_raw_response:
                     response = self._before_raw_response(response)
-                return str.encode(response)
+                if not isinstance(response, (bytes, bytearray)):
+                    return str.encode(response)
+                return response
 
         base_model_view_set = type(f'{self._resource_name}JSONApiModelViewSet{self._api_version}', (ModelViewSet,), {
             'renderer_classes': (Renderer,),
@@ -680,7 +677,9 @@ class JsonApiResourceViewBuilder:
                 )
                 if self._before_raw_response:
                     response = self._before_raw_response(response)
-                return str.encode(response)
+                if not isinstance(response, (bytes, bytearray)):
+                    return str.encode(response)
+                return response
 
         patch_view_set = None
         if any([self._on_update_callback, self._on_delete_callback, self._on_get_callback]) or not self._only_callbacks:
