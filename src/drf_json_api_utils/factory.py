@@ -27,6 +27,7 @@ from . import lookups as filter_lookups
 from . import plugins
 from .common import LimitedJsonApiPageNumberPagination, JsonApiSearchFilter, LOGGER
 from .constructors import _construct_serializer, _construct_filter_backend
+from .json_api_spec_http_methods import HTTP_GET, HTTP_POST, HTTP_PATCH
 from .namespace import _append_to_namespace, _RESOURCE_NAME_TO_SPICE, _MODEL_TO_SERIALIZERS
 from .types import CustomField, Filter, Relation, GenericRelation, ComputedFilter, RelatedResource
 
@@ -51,6 +52,26 @@ FILTER_MAP = {
 }
 
 
+def get_dict_by_methods(view_type, allowed_http_methods):
+    out = {}
+    if view_type == 'get':
+        if HTTP_GET in allowed_http_methods:
+            out['get'] = 'retrieve'
+        if HTTP_PATCH in allowed_http_methods:
+            out['patch'] = 'update'
+        if HTTP_PATCH in allowed_http_methods:
+            out['delete'] = 'destroy'
+    elif view_type == 'list':
+        if HTTP_GET in allowed_http_methods:
+            out['get'] = 'list'
+        if HTTP_POST in allowed_http_methods:
+            out['post'] = 'create'
+    elif view_type == 'relation':
+        if HTTP_GET in allowed_http_methods:
+            out['get'] = 'retrieve_related'
+    return out
+
+
 class JsonApiModelViewBuilder:
     DEFAULT_RELATED_LIMIT = 100
 
@@ -63,7 +84,6 @@ class JsonApiModelViewBuilder:
                  authentication_classes: Optional[Sequence[Type[BaseAuthentication]]] = None,
                  queryset: Optional[QuerySet] = None,
                  permitted_objects: Optional[Callable[[Request, QuerySet], QuerySet]] = None,
-                 skip_plugins: Optional[Sequence[str]] = None,
                  include_plugins: Optional[Sequence[str]] = None,
                  plugin_options: Optional[Dict[str, Any]] = None):
         self.__validate_http_methods(allowed_methods)
@@ -98,11 +118,7 @@ class JsonApiModelViewBuilder:
         else:
             self._queryset = queryset
         self._spice_queryset = permitted_objects
-        self._skip_plugins = skip_plugins if skip_plugins is not None else [plugins.AUTO_ADMIN_VIEWS]
-        include_plugins = include_plugins or []
-        for item in include_plugins:
-            if item in self._skip_plugins:
-                self._skip_plugins.remove(item)
+        self._include_plugins = include_plugins or []
         self._plugin_options = plugin_options or {}
 
     @staticmethod
@@ -268,10 +284,8 @@ class JsonApiModelViewBuilder:
 
     def _get_history_urls(self) -> Sequence[partial]:
         history_builder = deepcopy(self)
-        if plugins.AUTO_ADMIN_VIEWS not in history_builder._skip_plugins:
-            history_builder._skip_plugins = [plugins.DJANGO_SIMPLE_HISTORY]
-        else:
-            history_builder._skip_plugins = [plugins.DJANGO_SIMPLE_HISTORY, plugins.AUTO_ADMIN_VIEWS]
+        if plugins.DJANGO_SIMPLE_HISTORY in self._include_plugins:
+            history_builder._include_plugins = []
         history_builder._model = apps.get_model(self._model.objects.model._meta.db_table.split('_')[0],
                                                 f'Historical{self._model.__name__}')
         history_builder._queryset = self._model.history
@@ -291,7 +305,8 @@ class JsonApiModelViewBuilder:
 
     def _get_admin_urls(self, ignore_swagger: bool = False) -> Sequence[partial]:
         admin_builder = deepcopy(self)
-        admin_builder._skip_plugins = [plugins.AUTO_ADMIN_VIEWS]
+        if plugins.AUTO_ADMIN_VIEWS in self._include_plugins:
+            admin_builder._include_plugins = []
         admin_builder._spice_queryset = None
         admin_builder._resource_name = f'{admin_builder._resource_name}'
         admin_permission_class = admin_builder._plugin_options.get(plugins.AUTO_ADMIN_VIEWS, {}).get(
@@ -436,6 +451,13 @@ class JsonApiModelViewBuilder:
         for pk_name in ['pk', self._primary_key_name]:
             relationship_view = type(f'{self._resource_name}RelationshipsView{self._api_version}', (RelationshipView,),
                                      {
+                                         'http_method_names': list(map(lambda method: method.lower(),
+                                                                       filter(lambda method: method in [
+                                                                           json_api_spec_http_methods.HTTP_GET,
+                                                                           json_api_spec_http_methods.HTTP_PATCH,
+                                                                           json_api_spec_http_methods.HTTP_DELETE],
+                                                                              self._allowed_methods))) + ['head',
+                                                                                                          'options'],
                                          'get_queryset': get_queryset,
                                          'lookup_field': pk_name
                                      })
@@ -493,22 +515,27 @@ class JsonApiModelViewBuilder:
 
             urls.extend([
                 url(rf'^{urls_prefix}{url_resource_name}$',
-                    list_method_view_set.as_view({'get': 'list', 'post': 'create'}, name=f'list_{self._resource_name}'),
+                    list_method_view_set.as_view(get_dict_by_methods('list', self._allowed_methods), name=f'list_{self._resource_name}'),
                     name=f'list-{self._resource_name}{self._api_version}'),
                 url(rf'^{urls_prefix}{url_resource_name}/(?P<{pk_name}>[^/.]+)/$',
-                    get_method_view_set.as_view({'get': 'retrieve', 'patch': 'update', 'delete': 'destroy'},
+                    get_method_view_set.as_view(get_dict_by_methods('get', self._allowed_methods),
                                                 name=f'get_{self._resource_name}'),
                     name=f'{self._resource_name}{self._api_version}-detail'),
-                url(rf'^{urls_prefix}{url_resource_name}/(?P<{pk_name}>[^/.]+)/(?P<related_field>\w+)/$',
-                    list_method_view_set.as_view({'get': 'retrieve_related'}, name=f'related_{self._resource_name}'),
-                    name=f'related-{self._resource_name}{self._api_version}'),
                 url(
                     rf'^{urls_prefix}{url_resource_name}/(?P<{pk_name}>[^/.]+)/relationships/(?P<related_field>[^/.]+)$',
                     view=relationship_view.as_view(),
                     name=f'{self._resource_name}{self._api_version}-relationships'),
             ])
 
-        if plugins.DJANGO_SIMPLE_HISTORY not in self._skip_plugins:
+            relation_view_dict = get_dict_by_methods('relation', self._allowed_methods)
+            if relation_view_dict:
+                urls.extend([
+                    url(rf'^{urls_prefix}{url_resource_name}/(?P<{pk_name}>[^/.]+)/(?P<related_field>\w+)/$',
+                        list_method_view_set.as_view(relation_view_dict, name=f'related_{self._resource_name}'),
+                        name=f'related-{self._resource_name}{self._api_version}')
+                ])
+
+        if plugins.DJANGO_SIMPLE_HISTORY in self._include_plugins:
             try:
                 import simple_history
 
@@ -516,7 +543,7 @@ class JsonApiModelViewBuilder:
             except Exception as e:
                 pass
 
-        if plugins.AUTO_ADMIN_VIEWS not in self._skip_plugins:
+        if plugins.AUTO_ADMIN_VIEWS in self._include_plugins:
             urls.extend(self._get_admin_urls(ignore_swagger=ignore_swagger))
 
         return urls
@@ -739,13 +766,16 @@ class JsonApiResourceViewBuilder:
         if get_view_set is not None:
             urls.extend([
                 url(rf'^{urls_prefix}{url_resource_name}{urls_suffix}$',
-                    get_view_set.as_view({'get': 'list', 'post': 'create'}, name=f'list_{self._resource_name}'),
+                    get_view_set.as_view(get_dict_by_methods('list', self._allowed_methods), name=f'list_{self._resource_name}'),
                     name=f'list-{self._resource_name}{self._api_version}')
             ])
         if patch_view_set is not None:
+            view_dict = get_dict_by_methods('get', self._allowed_methods)
+            if 'get' in view_dict:
+                view_dict['get'] = 'get'
             urls.extend([
                 url(rf'^{urls_prefix}{url_resource_name}{urls_suffix}/(?P<{self._unique_identifier}>[^/.]+)/$',
-                    patch_view_set.as_view({'get': 'get', 'patch': 'update', 'delete': 'destroy'},
+                    patch_view_set.as_view(view_dict,
                                            name=f'get_{self._resource_name}'),
                     name=f'{self._resource_name}{self._api_version}-detail')
             ])

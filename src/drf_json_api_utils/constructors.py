@@ -31,6 +31,13 @@ def _construct_serializer(serializer_prefix: str, serializer_suffix: str,
                           generic_relations: Sequence[GenericRelation], related_limit: int,
                           primary_key_name: str, on_validate: FunctionType = None,
                           after_list_callback: Callable = None, is_admin: bool = False) -> Type:
+    serializer_name = f'{serializer_prefix}{resource_name}Serializer{serializer_suffix}'
+    if model in _MODEL_TO_SERIALIZERS:
+        found_serializer = list(
+            filter(lambda serializer: serializer.__name__ == serializer_name, _MODEL_TO_SERIALIZERS[model]))
+        if found_serializer:
+            return found_serializer[0]
+
     def to_representation(self, iterable):
         if isinstance(iterable, QuerySet):
             real_count = iterable.count()
@@ -207,7 +214,7 @@ def _construct_serializer(serializer_prefix: str, serializer_suffix: str,
                 check_instance = instance[0]
             if check_instance is not None and not isinstance(check_instance, (cls.Meta.model, list, QuerySet)):
                 serial = list(filter(lambda serial: serial.__name__.startswith(serializer_prefix),
-                            _MODEL_TO_SERIALIZERS[type(check_instance)]))
+                                     _MODEL_TO_SERIALIZERS[type(check_instance)]))
                 return serial[-1](instance=instance, *args, **kwargs)
             return super(GenericSerializer, cls).__new__(cls, instance=instance, *args, **kwargs)
 
@@ -218,7 +225,7 @@ def _construct_serializer(serializer_prefix: str, serializer_suffix: str,
                 ret = after_list_callback(self.context['request'], {'results': [ret]})['results'][0]
             return ReturnDict(ret, serializer=self)
 
-    new_serializer = type(f'{serializer_prefix}{resource_name}Serializer{serializer_suffix}', (GenericSerializer,), {
+    new_serializer = type(serializer_name, (GenericSerializer,), {
         **{custom_field.name: serializers.SerializerMethodField(read_only=True) for custom_field in
            custom_fields},
         **{f'get_{custom_field.name}': staticmethod(custom_field.callback) for custom_field in custom_fields},
