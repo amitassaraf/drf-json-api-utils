@@ -27,7 +27,7 @@ from . import lookups as filter_lookups
 from . import plugins
 from .common import LimitedJsonApiPageNumberPagination, JsonApiSearchFilter, LOGGER
 from .constructors import _construct_serializer, _construct_filter_backend
-from .json_api_spec_http_methods import HTTP_GET, HTTP_POST, HTTP_PATCH
+from .json_api_spec_http_methods import HTTP_GET, HTTP_POST, HTTP_PATCH, HTTP_DELETE
 from .namespace import _append_to_namespace, _RESOURCE_NAME_TO_SPICE, _MODEL_TO_SERIALIZERS
 from .types import CustomField, Filter, Relation, GenericRelation, ComputedFilter, RelatedResource
 
@@ -59,7 +59,7 @@ def get_dict_by_methods(view_type, allowed_http_methods):
             out['get'] = 'retrieve'
         if HTTP_PATCH in allowed_http_methods:
             out['patch'] = 'update'
-        if HTTP_PATCH in allowed_http_methods:
+        if HTTP_DELETE in allowed_http_methods:
             out['delete'] = 'destroy'
     elif view_type == 'list':
         if HTTP_GET in allowed_http_methods:
@@ -308,7 +308,6 @@ class JsonApiModelViewBuilder:
         if plugins.AUTO_ADMIN_VIEWS in self._include_plugins:
             admin_builder._include_plugins = []
         admin_builder._spice_queryset = None
-        admin_builder._resource_name = f'{admin_builder._resource_name}'
         admin_permission_class = admin_builder._plugin_options.get(plugins.AUTO_ADMIN_VIEWS, {}).get(
             'ADMIN_PERMISSION_CLASS')
         admin_builder._is_admin = True
