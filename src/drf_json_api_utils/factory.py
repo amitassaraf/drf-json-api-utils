@@ -85,7 +85,8 @@ class JsonApiModelViewBuilder:
                  queryset: Optional[QuerySet] = None,
                  permitted_objects: Optional[Callable[[Request, QuerySet], QuerySet]] = None,
                  include_plugins: Optional[Sequence[str]] = None,
-                 plugin_options: Optional[Dict[str, Any]] = None):
+                 plugin_options: Optional[Dict[str, Any]] = None,
+                 expose_related_views: Optional[bool] = False):
         self.__validate_http_methods(allowed_methods)
         self._model = model
         self._fields = {}
@@ -112,6 +113,7 @@ class JsonApiModelViewBuilder:
         self._before_list_callback = None
         self._after_list_callback = None
         self._before_raw_response = None
+        self._expose_related_views = expose_related_views
         self._is_admin = False
         if queryset is None:
             self._queryset = self._model.objects
@@ -514,25 +516,28 @@ class JsonApiModelViewBuilder:
 
             urls.extend([
                 url(rf'^{urls_prefix}{url_resource_name}$',
-                    list_method_view_set.as_view(get_dict_by_methods('list', self._allowed_methods), name=f'list_{self._resource_name}'),
-                    name=f'list-{self._resource_name}{self._api_version}'),
+                    list_method_view_set.as_view(get_dict_by_methods('list', self._allowed_methods),
+                                                 name=f'list_{self._resource_name}'),
+                    name=f'list-{"admin_view_" if self._is_admin else ""}{self._resource_name}{self._api_version}'),
                 url(rf'^{urls_prefix}{url_resource_name}/(?P<{pk_name}>[^/.]+)/$',
                     get_method_view_set.as_view(get_dict_by_methods('get', self._allowed_methods),
                                                 name=f'get_{self._resource_name}'),
-                    name=f'{self._resource_name}{self._api_version}-detail'),
-                url(
-                    rf'^{urls_prefix}{url_resource_name}/(?P<{pk_name}>[^/.]+)/relationships/(?P<related_field>[^/.]+)$',
-                    view=relationship_view.as_view(),
-                    name=f'{self._resource_name}{self._api_version}-relationships'),
+                    name=f'{"admin_view_" if self._is_admin else ""}{self._resource_name}{self._api_version}-detail'),
             ])
 
-            relation_view_dict = get_dict_by_methods('relation', self._allowed_methods)
-            if relation_view_dict:
+            if self._expose_related_views:
                 urls.extend([
-                    url(rf'^{urls_prefix}{url_resource_name}/(?P<{pk_name}>[^/.]+)/(?P<related_field>\w+)/$',
-                        list_method_view_set.as_view(relation_view_dict, name=f'related_{self._resource_name}'),
-                        name=f'related-{self._resource_name}{self._api_version}')
-                ])
+                    url(
+                        rf'^{urls_prefix}{url_resource_name}/(?P<{pk_name}>[^/.]+)/relationships/(?P<related_field>[^/.]+)$',
+                        view=relationship_view.as_view(),
+                        name=f'{"admin_view_" if self._is_admin else ""}{self._resource_name}{self._api_version}-relationships')])
+                relation_view_dict = get_dict_by_methods('relation', self._allowed_methods)
+                if relation_view_dict:
+                    urls.extend([
+                        url(rf'^{urls_prefix}{url_resource_name}/(?P<{pk_name}>[^/.]+)/(?P<related_field>\w+)/$',
+                            list_method_view_set.as_view(relation_view_dict, name=f'related_{self._resource_name}'),
+                            name=f'related-{"admin_view_" if self._is_admin else ""}{self._resource_name}{self._api_version}')
+                    ])
 
         if plugins.DJANGO_SIMPLE_HISTORY in self._include_plugins:
             try:
@@ -765,7 +770,8 @@ class JsonApiResourceViewBuilder:
         if get_view_set is not None:
             urls.extend([
                 url(rf'^{urls_prefix}{url_resource_name}{urls_suffix}$',
-                    get_view_set.as_view(get_dict_by_methods('list', self._allowed_methods), name=f'list_{self._resource_name}'),
+                    get_view_set.as_view(get_dict_by_methods('list', self._allowed_methods),
+                                         name=f'list_{self._resource_name}'),
                     name=f'list-{self._resource_name}{self._api_version}')
             ])
         if patch_view_set is not None:
