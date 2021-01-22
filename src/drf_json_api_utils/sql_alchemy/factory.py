@@ -68,6 +68,7 @@ class AlchemyJsonApiViewBuilder:
         self._custom_fields = {}
         self._computed_filters = {}
         self._api_version = api_version
+        self._is_admin = False
         self._skip_plugins = skip_plugins if skip_plugins is not None else [plugins.AUTO_ADMIN_VIEWS]
         include_plugins = include_plugins or []
         for item in include_plugins:
@@ -155,6 +156,7 @@ class AlchemyJsonApiViewBuilder:
         admin_builder._permitted_objects = None
         admin_permission_class = admin_builder._plugin_options.get(plugins.AUTO_ADMIN_VIEWS, {}).get(
             'ADMIN_PERMISSION_CLASS')
+        admin_builder._is_admin = True
 
         if admin_permission_class is not None:
             admin_builder._permission_classes = [*admin_builder._permission_classes, admin_permission_class]
@@ -380,6 +382,7 @@ class AlchemyJsonApiViewBuilder:
                                              allowed_methods=self._allowed_methods,
                                              permission_classes=self._permission_classes,
                                              authentication_classes=self._authentication_classes,
+                                             is_admin=self._is_admin,
                                              raw_items=True)
 
         if json_api_spec_http_methods.HTTP_GET in self._allowed_methods:

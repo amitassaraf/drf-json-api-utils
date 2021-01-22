@@ -566,6 +566,7 @@ class JsonApiResourceViewBuilder:
                  permission_classes: Sequence[Type[BasePermission]] = None,
                  authentication_classes: Sequence[Type[BaseAuthentication]] = None,
                  raw_items=False,
+                 is_admin: Optional[bool] = False,
                  only_callbacks: Optional[bool] = False,
                  page_size: int = 50):
         self._allowed_methods = [*allowed_methods]
@@ -582,6 +583,7 @@ class JsonApiResourceViewBuilder:
         self._on_list_callback = None
         self._on_get_callback = None
         self._before_raw_response = None
+        self._is_admin = is_admin
         self._page_size = page_size
         self._only_callbacks = only_callbacks
 
@@ -772,7 +774,7 @@ class JsonApiResourceViewBuilder:
                 url(rf'^{urls_prefix}{url_resource_name}{urls_suffix}$',
                     get_view_set.as_view(get_dict_by_methods('list', self._allowed_methods),
                                          name=f'list_{self._resource_name}'),
-                    name=f'list-{self._resource_name}{self._api_version}')
+                    name=f'list-{"admin_view_" if self._is_admin else ""}{self._resource_name}{self._api_version}')
             ])
         if patch_view_set is not None:
             view_dict = get_dict_by_methods('get', self._allowed_methods)
@@ -782,7 +784,7 @@ class JsonApiResourceViewBuilder:
                 url(rf'^{urls_prefix}{url_resource_name}{urls_suffix}/(?P<{self._unique_identifier}>[^/.]+)/$',
                     patch_view_set.as_view(view_dict,
                                            name=f'get_{self._resource_name}'),
-                    name=f'{self._resource_name}{self._api_version}-detail')
+                    name=f'{"admin_view_" if self._is_admin else ""}{self._resource_name}{self._api_version}-detail')
             ])
         return urls
 
