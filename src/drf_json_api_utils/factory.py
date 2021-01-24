@@ -523,14 +523,13 @@ class JsonApiModelViewBuilder:
                     get_method_view_set.as_view(get_dict_by_methods('get', self._allowed_methods),
                                                 name=f'get_{self._resource_name}'),
                     name=f'{"admin_view_" if self._is_admin else ""}{self._resource_name}{self._api_version}-detail'),
+                url(
+                    rf'^{urls_prefix}{url_resource_name}/(?P<{pk_name}>[^/.]+)/relationships/(?P<related_field>[^/.]+)$',
+                    view=relationship_view.as_view(),
+                    name=f'{"admin_view_" if self._is_admin else ""}{self._resource_name}{self._api_version}-relationships')
             ])
 
             if self._expose_related_views:
-                urls.extend([
-                    url(
-                        rf'^{urls_prefix}{url_resource_name}/(?P<{pk_name}>[^/.]+)/relationships/(?P<related_field>[^/.]+)$',
-                        view=relationship_view.as_view(),
-                        name=f'{"admin_view_" if self._is_admin else ""}{self._resource_name}{self._api_version}-relationships')])
                 relation_view_dict = get_dict_by_methods('relation', self._allowed_methods)
                 if relation_view_dict:
                     urls.extend([
