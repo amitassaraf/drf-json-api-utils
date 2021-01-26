@@ -284,8 +284,8 @@ def _construct_filter_backend(model: Type[Model], resource_name: str, filters: D
             if field is not None:
                 constructed_filters[filter_name] = BaseFilterSet.filter_for_field(field, filter.field, lookup_expr)
 
-        if filter.transform_value:
-            constructed_filters_transform_callbacks[key] = filter.transform_value
+            if filter.transform_value:
+                constructed_filters_transform_callbacks[filter_name] = filter.transform_value
 
     filter_set = type(f'{resource_name}FilterSet', (FilterSet,), {
         **constructed_filters,
