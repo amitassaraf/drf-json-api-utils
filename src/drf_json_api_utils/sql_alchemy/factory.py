@@ -64,6 +64,7 @@ class AlchemyJsonApiViewBuilder:
         self._after_delete_callback = None
         self._before_list_callback = None
         self._after_list_callback = None
+        self._before_get_response = None
         self._relations = []
         self._custom_fields = {}
         self._computed_filters = {}
@@ -94,6 +95,11 @@ class AlchemyJsonApiViewBuilder:
 
     def after_get(self, after_get_callback: Callable[[Any], Any] = None) -> 'AlchemyJsonApiViewBuilder':
         self._after_get_callback = after_get_callback
+        self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_GET)
+        return self
+
+    def before_get_response(self, before_get_response: Callable[[Any], Any] = None) -> 'AlchemyJsonApiViewBuilder':
+        self._before_get_response = before_get_response
         self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_GET)
         return self
 
@@ -242,6 +248,10 @@ class AlchemyJsonApiViewBuilder:
                 obj = self._after_get_callback(request, obj)
 
             result = schema.json_api_dump(obj, self._resource_name)
+
+            if self._before_get_response:
+                result = self._before_get_response(request, obj, result)
+
             return result, HTTP_200_OK
 
         def object_list(request, page, filters=None, includes=None, *args, **kwargs) -> Tuple[List, List, int, int]:
