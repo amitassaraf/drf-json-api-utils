@@ -393,6 +393,7 @@ class AlchemyJsonApiViewBuilder:
                                              permission_classes=self._permission_classes,
                                              authentication_classes=self._authentication_classes,
                                              is_admin=self._is_admin,
+                                             page_size=self._page_size,
                                              raw_items=True)
 
         if json_api_spec_http_methods.HTTP_GET in self._allowed_methods:

@@ -31,7 +31,7 @@ def _construct_serializer(serializer_prefix: str, serializer_suffix: str,
                           generic_relations: Sequence[GenericRelation], related_limit: int,
                           primary_key_name: str, on_validate: FunctionType = None,
                           after_list_callback: Callable = None, is_admin: bool = False) -> Type:
-    serializer_name = f'{serializer_prefix}{resource_name}Serializer{serializer_suffix}'
+    serializer_name = f'{"Admin" if is_admin else ""}{serializer_prefix}{resource_name}Serializer{serializer_suffix}'
     if model in _MODEL_TO_SERIALIZERS:
         found_serializer = list(
             filter(lambda serializer: serializer.__name__ == serializer_name, _MODEL_TO_SERIALIZERS[model]))
@@ -58,7 +58,7 @@ def _construct_serializer(serializer_prefix: str, serializer_suffix: str,
 
     def generate_relation_field(relation):
         def filter_relationship(self, instance, relationship):
-            if relation.resource_name in _RESOURCE_NAME_TO_SPICE:
+            if relation.resource_name in _RESOURCE_NAME_TO_SPICE and not is_admin:
                 return _RESOURCE_NAME_TO_SPICE[relation.resource_name](self.context['request'], relationship)
             return relationship
 
@@ -72,7 +72,7 @@ def _construct_serializer(serializer_prefix: str, serializer_suffix: str,
             queryset = filter_relationship(self, instance, relationship)
             return queryset.all() if (hasattr(queryset, 'all')) else queryset
 
-        many_related = type(f'{resource_name}ManyRelatedField', (ManyRelatedField,), {
+        many_related = type(f'{"Admin" if is_admin else ""}{resource_name}ManyRelatedField', (ManyRelatedField,), {
             'to_representation': to_representation,
             'get_attribute': get_attribute_override
         })
@@ -84,7 +84,7 @@ def _construct_serializer(serializer_prefix: str, serializer_suffix: str,
                     list_kwargs[key] = kwargs[key]
             return many_related(**list_kwargs)
 
-        resource_related_field = type(f'{resource_name}ManyRelatedField', (ResourceRelatedField,), {
+        resource_related_field = type(f'{"Admin" if is_admin else ""}{resource_name}ManyRelatedField', (ResourceRelatedField,), {
             'many_init': many_init
         })
 
@@ -102,16 +102,20 @@ def _construct_serializer(serializer_prefix: str, serializer_suffix: str,
     included_generic_serializers = {}
     for relation in relations:
         included_serializers[
-            relation.field] = f'drf_json_api_utils.namespace.{f"{serializer_prefix}{relation.resource_name}Serializer{relation.api_version}"}'
+            relation.field] = f'drf_json_api_utils.namespace.{"Admin" if is_admin else ""}{f"{serializer_prefix}{relation.resource_name}Serializer{relation.api_version}"}'
+    if resource_name == 'units':
+        print(included_serializers)
+        print(is_admin)
+
 
     for relation in generic_relations:
         for related in getattr(relation, 'related', []):
             if relation.field not in included_generic_serializers:
                 included_generic_serializers[relation.field] = []
             included_generic_serializers[relation.field].append(
-                f'drf_json_api_utils.namespace.{f"{serializer_prefix}{related.resource_name}Serializer{related.api_version}"}')
+                f'drf_json_api_utils.namespace.{"Admin" if is_admin else ""}{f"{serializer_prefix}{related.resource_name}Serializer{related.api_version}"}')
             included_serializers[
-                relation.field] = f'drf_json_api_utils.namespace.{f"{serializer_prefix}{related.resource_name}Serializer{related.api_version}"}'
+                relation.field] = f'drf_json_api_utils.namespace.{"Admin" if is_admin else ""}{f"{serializer_prefix}{related.resource_name}Serializer{related.api_version}"}'
 
     def get_generic_included_serializers(serializer):
         included_serializers = copy.copy(getattr(serializer, 'included_generic_serializers', dict()))
@@ -235,10 +239,10 @@ def _construct_serializer(serializer_prefix: str, serializer_suffix: str,
             else getattr(model, relation.field).field.related_model.objects.all(),
             many=relation.many,
             required=getattr(relation, 'required', False),
-            related_link_view_name=f'{relation.resource_name}{relation.api_version}-detail',
+            related_link_view_name=f'{"admin_view_" if is_admin else ""}{relation.resource_name}{relation.api_version}-detail',
             related_link_lookup_field=primary_key_name,
             related_link_url_kwarg=relation.primary_key_name or 'id',
-            self_link_view_name=f'{resource_name}{serializer_suffix}-relationships'
+            self_link_view_name=f'{"admin_view_" if is_admin else ""}{resource_name}{serializer_suffix}-relationships'
         ) for relation in relations if hasattr(model, relation.field)},
         **{relation.field: GenericRelatedField(
             {
@@ -248,14 +252,14 @@ def _construct_serializer(serializer_prefix: str, serializer_suffix: str,
                     else related.model.objects.all(),
                     many=relation.many,
                     required=getattr(relation, 'required', False),
-                    related_link_view_name=f'{related.resource_name}{related.api_version}-detail',
+                    related_link_view_name=f'{"admin_view_" if is_admin else ""}{related.resource_name}{related.api_version}-detail',
                     related_link_lookup_field=primary_key_name,
                     related_link_url_kwarg='id',
-                    self_link_view_name=f'{resource_name}{serializer_suffix}-relationships'
+                    self_link_view_name=f'{"admin_view_" if is_admin else ""}{resource_name}{serializer_suffix}-relationships'
                 )
                 for related in getattr(relation, 'related', [])
             },
-            self_link_view_name=f'{resource_name}{serializer_suffix}-relationships',
+            self_link_view_name=f'{"admin_view_" if is_admin else ""}{resource_name}{serializer_suffix}-relationships',
             related_link_lookup_field=primary_key_name) for relation in generic_relations if
             hasattr(model, relation.field)},
         'validate': validate_data,
