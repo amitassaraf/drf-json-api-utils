@@ -271,6 +271,10 @@ def _construct_serializer(serializer_prefix: str, serializer_suffix: str,
     _MODEL_TO_SERIALIZERS[model].append(new_serializer)
     return new_serializer
 
+def construct_new_filters(computed_filter):
+        def _generate_new_filters(self, queryset, field_name, value):
+            return computed_filter.filter_func(queryset, value)
+        return _generate_new_filters
 
 def _construct_filter_backend(model: Type[Model], resource_name: str, filters: Dict[str, Filter],
                               computed_filters: Dict[str, ComputedFilter]) -> Tuple[Type, Type]:
@@ -291,7 +295,7 @@ def _construct_filter_backend(model: Type[Model], resource_name: str, filters: D
         **constructed_filters,
         **{field: computed_filter.filter_type(method=f'filter_{field}') for field, computed_filter in
            computed_filters.items()},
-        **{f'filter_{field}': lambda self, queryset, field_name, value: computed_filter.filter_func(queryset, value) for
+        **{f'filter_{field}': construct_new_filters(computed_filter) for
            field, computed_filter in computed_filters.items()},
         'Meta': type('Meta', (), {
             'model': model,
