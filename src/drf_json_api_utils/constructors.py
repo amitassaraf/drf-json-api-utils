@@ -103,10 +103,6 @@ def _construct_serializer(serializer_prefix: str, serializer_suffix: str,
     for relation in relations:
         included_serializers[
             relation.field] = f'drf_json_api_utils.namespace.{"Admin" if is_admin else ""}{f"{serializer_prefix}{relation.resource_name}Serializer{relation.api_version}"}'
-    if resource_name == 'units':
-        print(included_serializers)
-        print(is_admin)
-
 
     for relation in generic_relations:
         for related in getattr(relation, 'related', []):
