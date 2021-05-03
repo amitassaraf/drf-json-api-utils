@@ -2,7 +2,7 @@ import copy
 import json
 from collections import OrderedDict
 from types import FunctionType
-from typing import Type, Dict, Tuple, Sequence
+from typing import Type, Dict, Tuple, Sequence, Callable
 
 import inflection
 from django.db.models import QuerySet, Model
@@ -10,8 +10,10 @@ from django.utils.module_loading import import_string as import_class_from_dotte
 from django_filters.filterset import BaseFilterSet
 from django_filters.rest_framework import FilterSet
 from django_filters.utils import get_model_field
+from rest_framework.exceptions import ValidationError
 from rest_framework.fields import get_attribute
 from rest_framework.relations import ManyRelatedField, MANY_RELATION_KWARGS
+from rest_framework.utils.serializer_helpers import ReturnDict
 from rest_framework_json_api import serializers
 from rest_framework_json_api.django_filters import DjangoFilterBackend
 from rest_framework_json_api.relations import ResourceRelatedField
@@ -19,14 +21,23 @@ from rest_framework_json_api.utils import get_resource_type_from_serializer, get
     get_resource_type_from_queryset
 
 from .generic_relation import GenericRelatedField
-from .namespace import _RESOURCE_NAME_TO_SPICE, _MODEL_TO_SERIALIZER
-from .types import CustomField, Relation, Filter, GenericRelation
+from .namespace import _RESOURCE_NAME_TO_SPICE, _MODEL_TO_SERIALIZERS
+from .types import CustomField, Relation, Filter, GenericRelation, ComputedFilter
 
 
-def _construct_serializer(serializer_prefix: str, model: Type[Model], resource_name: str, fields: Sequence[str],
+def _construct_serializer(serializer_prefix: str, serializer_suffix: str,
+                          model: Type[Model], resource_name: str, fields: Sequence[str],
                           custom_fields: Sequence[CustomField], relations: Sequence[Relation],
                           generic_relations: Sequence[GenericRelation], related_limit: int,
-                          primary_key_name: str, on_validate: FunctionType = None) -> Type:
+                          primary_key_name: str, on_validate: FunctionType = None,
+                          after_list_callback: Callable = None, is_admin: bool = False) -> Type:
+    serializer_name = f'{"Admin" if is_admin else ""}{serializer_prefix}{resource_name}Serializer{serializer_suffix}'
+    if model in _MODEL_TO_SERIALIZERS:
+        found_serializer = list(
+            filter(lambda serializer: serializer.__name__ == serializer_name, _MODEL_TO_SERIALIZERS[model]))
+        if found_serializer:
+            return found_serializer[0]
+
     def to_representation(self, iterable):
         if isinstance(iterable, QuerySet):
             real_count = iterable.count()
@@ -47,7 +58,7 @@ def _construct_serializer(serializer_prefix: str, model: Type[Model], resource_n
 
     def generate_relation_field(relation):
         def filter_relationship(self, instance, relationship):
-            if relation.resource_name in _RESOURCE_NAME_TO_SPICE:
+            if relation.resource_name in _RESOURCE_NAME_TO_SPICE and not is_admin:
                 return _RESOURCE_NAME_TO_SPICE[relation.resource_name](self.context['request'], relationship)
             return relationship
 
@@ -61,7 +72,7 @@ def _construct_serializer(serializer_prefix: str, model: Type[Model], resource_n
             queryset = filter_relationship(self, instance, relationship)
             return queryset.all() if (hasattr(queryset, 'all')) else queryset
 
-        many_related = type(f'{resource_name}ManyRelatedField', (ManyRelatedField,), {
+        many_related = type(f'{"Admin" if is_admin else ""}{resource_name}ManyRelatedField', (ManyRelatedField,), {
             'to_representation': to_representation,
             'get_attribute': get_attribute_override
         })
@@ -73,7 +84,7 @@ def _construct_serializer(serializer_prefix: str, model: Type[Model], resource_n
                     list_kwargs[key] = kwargs[key]
             return many_related(**list_kwargs)
 
-        resource_related_field = type(f'{resource_name}ManyRelatedField', (ResourceRelatedField,), {
+        resource_related_field = type(f'{"Admin" if is_admin else ""}{resource_name}ManyRelatedField', (ResourceRelatedField,), {
             'many_init': many_init
         })
 
@@ -81,23 +92,26 @@ def _construct_serializer(serializer_prefix: str, model: Type[Model], resource_n
 
     def validate_data(self, data):
         if on_validate is not None:
-            return on_validate(self.context['request'], self, data)
+            try:
+                return on_validate(self.context['request'], self, data)
+            except Exception as e:
+                raise ValidationError(detail=str(e))
         return data
 
     included_serializers = {}
     included_generic_serializers = {}
     for relation in relations:
         included_serializers[
-            relation.field] = f'drf_json_api_utils.namespace.{f"{serializer_prefix}{relation.resource_name}Serializer"}'
+            relation.field] = f'drf_json_api_utils.namespace.{"Admin" if is_admin else ""}{f"{serializer_prefix}{relation.resource_name}Serializer{relation.api_version}"}'
 
     for relation in generic_relations:
-        for related_model, relation_resource_name in getattr(relation, 'related', {}).items():
+        for related in getattr(relation, 'related', []):
             if relation.field not in included_generic_serializers:
                 included_generic_serializers[relation.field] = []
             included_generic_serializers[relation.field].append(
-                f'drf_json_api_utils.namespace.{f"{serializer_prefix}{relation_resource_name}Serializer"}')
+                f'drf_json_api_utils.namespace.{"Admin" if is_admin else ""}{f"{serializer_prefix}{related.resource_name}Serializer{related.api_version}"}')
             included_serializers[
-                relation.field] = f'drf_json_api_utils.namespace.{f"{serializer_prefix}{relation_resource_name}Serializer"}'
+                relation.field] = f'drf_json_api_utils.namespace.{"Admin" if is_admin else ""}{f"{serializer_prefix}{related.resource_name}Serializer{related.api_version}"}'
 
     def get_generic_included_serializers(serializer):
         included_serializers = copy.copy(getattr(serializer, 'included_generic_serializers', dict()))
@@ -196,13 +210,22 @@ def _construct_serializer(serializer_prefix: str, model: Type[Model], resource_n
     class GenericSerializer(serializers.HyperlinkedModelSerializer):
         def __new__(cls, instance=None, *args, **kwargs):
             check_instance = instance
-            if isinstance(instance, (list,)) and len(instance) > 0:
+            if isinstance(instance, (list, QuerySet)) and len(instance) > 0:
                 check_instance = instance[0]
-            if check_instance is not None and not isinstance(check_instance, (cls.Meta.model, list,)):
-                return _MODEL_TO_SERIALIZER[type(check_instance)](instance=instance, *args, **kwargs)
+            if check_instance is not None and not isinstance(check_instance, (cls.Meta.model, list, QuerySet)):
+                serial = list(filter(lambda serial: serial.__name__.startswith(serializer_prefix),
+                                     _MODEL_TO_SERIALIZERS[type(check_instance)]))
+                return serial[-1](instance=instance, *args, **kwargs)
             return super(GenericSerializer, cls).__new__(cls, instance=instance, *args, **kwargs)
 
-    new_serializer = type(f'{serializer_prefix}{resource_name}Serializer', (GenericSerializer,), {
+        @property
+        def data(self):
+            ret = super().data
+            if after_list_callback is not None:
+                ret = after_list_callback(self.context['request'], {'results': [ret]})['results'][0]
+            return ReturnDict(ret, serializer=self)
+
+    new_serializer = type(serializer_name, (GenericSerializer,), {
         **{custom_field.name: serializers.SerializerMethodField(read_only=True) for custom_field in
            custom_fields},
         **{f'get_{custom_field.name}': staticmethod(custom_field.callback) for custom_field in custom_fields},
@@ -212,40 +235,49 @@ def _construct_serializer(serializer_prefix: str, model: Type[Model], resource_n
             else getattr(model, relation.field).field.related_model.objects.all(),
             many=relation.many,
             required=getattr(relation, 'required', False),
-            related_link_view_name=f'{relation.resource_name}-detail',
+            related_link_view_name=f'{"admin_view_" if is_admin else ""}{relation.resource_name}{relation.api_version}-detail',
             related_link_lookup_field=primary_key_name,
             related_link_url_kwarg=relation.primary_key_name or 'id',
-            self_link_view_name=f'{resource_name}-relationships'
-        ) for relation in relations},
+            self_link_view_name=f'{"admin_view_" if is_admin else ""}{resource_name}{serializer_suffix}-relationships'
+        ) for relation in relations if hasattr(model, relation.field)},
         **{relation.field: GenericRelatedField(
             {
-                related_model: generate_generic_resource(related_model)(
+                related.model: generate_generic_resource(related.model)(
                     queryset=getattr(model, relation.field).get_queryset()
                     if hasattr(getattr(model, relation.field), 'get_queryset')
-                    else related_model.objects.all(),
+                    else related.model.objects.all(),
                     many=relation.many,
                     required=getattr(relation, 'required', False),
-                    related_link_view_name=f'{relation_resource_name}-detail',
+                    related_link_view_name=f'{"admin_view_" if is_admin else ""}{related.resource_name}{related.api_version}-detail',
                     related_link_lookup_field=primary_key_name,
                     related_link_url_kwarg='id',
-                    self_link_view_name=f'{resource_name}-relationships'
+                    self_link_view_name=f'{"admin_view_" if is_admin else ""}{resource_name}{serializer_suffix}-relationships'
                 )
-                for related_model, relation_resource_name in getattr(relation, 'related', {}).items()
+                for related in getattr(relation, 'related', [])
             },
-            self_link_view_name=f'{resource_name}-relationships',
-            related_link_lookup_field=primary_key_name) for relation in generic_relations},
+            self_link_view_name=f'{"admin_view_" if is_admin else ""}{resource_name}{serializer_suffix}-relationships',
+            related_link_lookup_field=primary_key_name) for relation in generic_relations if
+            hasattr(model, relation.field)},
         'validate': validate_data,
-        'Meta': type('Meta', (), {'model': model, 'fields': [*fields, *list(
-            map(lambda custom_field: custom_field.name, custom_fields))],
-                                  'resource_name': resource_name}),
+        'Meta': type('Meta', (),
+                     {'model': model, 'fields': [*[field for field in [*fields] if hasattr(model, field)], *list(
+                         map(lambda custom_field: custom_field.name, custom_fields))],
+                      'resource_name': resource_name}),
         'included_serializers': included_serializers,
         'included_generic_serializers': included_generic_serializers
     })
-    _MODEL_TO_SERIALIZER[model] = new_serializer
+    if model not in _MODEL_TO_SERIALIZERS:
+        _MODEL_TO_SERIALIZERS[model] = []
+    _MODEL_TO_SERIALIZERS[model].append(new_serializer)
     return new_serializer
 
+def construct_new_filters(computed_filter):
+        def _generate_new_filters(self, queryset, field_name, value):
+            return computed_filter.filter_func(queryset, value)
+        return _generate_new_filters
 
-def _construct_filter_backend(model: Type[Model], resource_name: str, filters: Dict[str, Filter]) -> Tuple[Type, Type]:
+def _construct_filter_backend(model: Type[Model], resource_name: str, filters: Dict[str, Filter],
+                              computed_filters: Dict[str, ComputedFilter]) -> Tuple[Type, Type]:
     constructed_filters_transform_callbacks = {}
     constructed_filters = {}
     for key, filter in filters.items():
@@ -256,11 +288,15 @@ def _construct_filter_backend(model: Type[Model], resource_name: str, filters: D
             if field is not None:
                 constructed_filters[filter_name] = BaseFilterSet.filter_for_field(field, filter.field, lookup_expr)
 
-        if filter.transform_value:
-            constructed_filters_transform_callbacks[key] = filter.transform_value
+            if filter.transform_value:
+                constructed_filters_transform_callbacks[filter_name] = filter.transform_value
 
     filter_set = type(f'{resource_name}FilterSet', (FilterSet,), {
         **constructed_filters,
+        **{field: computed_filter.filter_type(method=f'filter_{field}') for field, computed_filter in
+           computed_filters.items()},
+        **{f'filter_{field}': construct_new_filters(computed_filter) for
+           field, computed_filter in computed_filters.items()},
         'Meta': type('Meta', (), {
             'model': model,
             'fields': []
