@@ -25,7 +25,7 @@ from rest_framework_json_api.views import RelationshipView, ModelViewSet
 from . import json_api_spec_http_methods
 from . import lookups as filter_lookups
 from . import plugins
-from .common import LimitedJsonApiPageNumberPagination, JsonApiSearchFilter, LOGGER
+from .common import LimitedJsonApiPageNumberPagination, JsonApiSearchFilter, LOGGER, UrlItem
 from .constructors import _construct_serializer, _construct_filter_backend
 from .json_api_spec_http_methods import HTTP_GET, HTTP_POST, HTTP_PATCH, HTTP_DELETE
 from .namespace import _append_to_namespace, _RESOURCE_NAME_TO_SPICE, _MODEL_TO_SERIALIZERS
@@ -114,7 +114,7 @@ class JsonApiModelViewBuilder:
         self._after_list_callback = None
         self._before_raw_response = None
         self._expose_related_views = expose_related_views
-        self._is_admin = False
+        self._is_admin = self._permission_classes and any(getattr(pc, 'admin', False) for pc in self._permission_classes)
         if queryset is None:
             self._queryset = self._model.objects
         else:
@@ -515,27 +515,38 @@ class JsonApiModelViewBuilder:
                 url_resource_name = self._resource_name
 
             urls.extend([
-                url(rf'^{urls_prefix}{url_resource_name}$',
-                    list_method_view_set.as_view(get_dict_by_methods('list', self._allowed_methods),
-                                                 name=f'list_{self._resource_name}'),
-                    name=f'list-{"admin_view_" if self._is_admin else ""}{self._resource_name}{self._api_version}'),
-                url(rf'^{urls_prefix}{url_resource_name}/(?P<{pk_name}>[^/.]+)/$',
-                    get_method_view_set.as_view(get_dict_by_methods('get', self._allowed_methods),
-                                                name=f'get_{self._resource_name}'),
-                    name=f'{"admin_view_" if self._is_admin else ""}{self._resource_name}{self._api_version}-detail'),
-                url(
-                    rf'^{urls_prefix}{url_resource_name}/(?P<{pk_name}>[^/.]+)/relationships/(?P<related_field>[^/.]+)$',
-                    view=relationship_view.as_view(),
-                    name=f'{"admin_view_" if self._is_admin else ""}{self._resource_name}{self._api_version}-relationships')
+                UrlItem(
+                    url(rf'^{urls_prefix}{url_resource_name}$',
+                        list_method_view_set.as_view(get_dict_by_methods('list', self._allowed_methods),
+                                                     name=f'list_{self._resource_name}'),
+                        name=f'list-{"admin_view_" if self._is_admin else ""}{self._resource_name}{self._api_version}'),
+                    self._is_admin
+                ),
+                UrlItem(
+                    url(rf'^{urls_prefix}{url_resource_name}/(?P<{pk_name}>[^/.]+)/$',
+                        get_method_view_set.as_view(get_dict_by_methods('get', self._allowed_methods),
+                                                    name=f'get_{self._resource_name}'),
+                        name=f'{"admin_view_" if self._is_admin else ""}{self._resource_name}{self._api_version}-detail'),
+                    self._is_admin
+                ),
+                UrlItem(
+                    url(rf'^{urls_prefix}{url_resource_name}/(?P<{pk_name}>[^/.]+)/relationships/(?P<related_field>[^/.]+)$',
+                        view=relationship_view.as_view(),
+                        name=f'{"admin_view_" if self._is_admin else ""}{self._resource_name}{self._api_version}-relationships'),
+                    self._is_admin
+                )
             ])
 
             if self._expose_related_views:
                 relation_view_dict = get_dict_by_methods('relation', self._allowed_methods)
                 if relation_view_dict:
                     urls.extend([
-                        url(rf'^{urls_prefix}{url_resource_name}/(?P<{pk_name}>[^/.]+)/(?P<related_field>\w+)/$',
-                            list_method_view_set.as_view(relation_view_dict, name=f'related_{self._resource_name}'),
-                            name=f'related-{"admin_view_" if self._is_admin else ""}{self._resource_name}{self._api_version}')
+                        UrlItem(
+                            url(rf'^{urls_prefix}{url_resource_name}/(?P<{pk_name}>[^/.]+)/(?P<related_field>\w+)/$',
+                                list_method_view_set.as_view(relation_view_dict, name=f'related_{self._resource_name}'),
+                                name=f'related-{"admin_view_" if self._is_admin else ""}{self._resource_name}{self._api_version}'),
+                            self._is_admin
+                        )
                     ])
 
         if plugins.DJANGO_SIMPLE_HISTORY in self._include_plugins:
@@ -582,7 +593,8 @@ class JsonApiResourceViewBuilder:
         self._on_list_callback = None
         self._on_get_callback = None
         self._before_raw_response = None
-        self._is_admin = is_admin
+        self._is_admin = is_admin \
+            or (self._permission_classes and any(getattr(pc, 'admin', False) for pc in self._permission_classes))
         self._page_size = page_size
         self._only_callbacks = only_callbacks
 
@@ -770,20 +782,26 @@ class JsonApiResourceViewBuilder:
 
         if get_view_set is not None:
             urls.extend([
-                url(rf'^{urls_prefix}{url_resource_name}{urls_suffix}$',
-                    get_view_set.as_view(get_dict_by_methods('list', self._allowed_methods),
-                                         name=f'list_{self._resource_name}'),
-                    name=f'list-{"admin_view_" if self._is_admin else ""}{self._resource_name}{self._api_version}')
+                UrlItem(
+                    url(rf'^{urls_prefix}{url_resource_name}{urls_suffix}$',
+                        get_view_set.as_view(get_dict_by_methods('list', self._allowed_methods),
+                                             name=f'list_{self._resource_name}'),
+                        name=f'list-{"admin_view_" if self._is_admin else ""}{self._resource_name}{self._api_version}'),
+                    self._is_admin
+                )
             ])
         if patch_view_set is not None:
             view_dict = get_dict_by_methods('get', self._allowed_methods)
             if 'get' in view_dict:
                 view_dict['get'] = 'get'
             urls.extend([
-                url(rf'^{urls_prefix}{url_resource_name}{urls_suffix}/(?P<{self._unique_identifier}>[^/.]+)/$',
-                    patch_view_set.as_view(view_dict,
-                                           name=f'get_{self._resource_name}'),
-                    name=f'{"admin_view_" if self._is_admin else ""}{self._resource_name}{self._api_version}-detail')
+                UrlItem(
+                    url(rf'^{urls_prefix}{url_resource_name}{urls_suffix}/(?P<{self._unique_identifier}>[^/.]+)/$',
+                        patch_view_set.as_view(view_dict,
+                                               name=f'get_{self._resource_name}'),
+                        name=f'{"admin_view_" if self._is_admin else ""}{self._resource_name}{self._api_version}-detail'),
+                    self._is_admin
+                )
             ])
         return urls
 
