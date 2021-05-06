@@ -2,7 +2,6 @@ import logging
 
 from rest_framework.filters import SearchFilter
 from rest_framework_json_api.pagination import JsonApiPageNumberPagination
-from collections import namedtuple
 
 
 class LimitedJsonApiPageNumberPagination(JsonApiPageNumberPagination):
