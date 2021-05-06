@@ -14,6 +14,3 @@ class JsonApiSearchFilter(SearchFilter):
 
 
 LOGGER = logging.getLogger(__name__)
-
-
-UrlItem = namedtuple("UrlItem", ["django_url_object", "is_admin"])
