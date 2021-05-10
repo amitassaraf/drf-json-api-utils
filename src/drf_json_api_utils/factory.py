@@ -104,7 +104,7 @@ class JsonApiModelViewBuilder:
         '_plugin_options': {'kwarg': 'plugin_options', 'default': {}},
         '_allowed_methods': {'kwarg': 'allowed_methods', 'default': []},
         '_primary_key_name': {'kwarg': 'primary_key_name', 'default': 'id'},
-        '_resource_name': {'kwarg': '_resource_name', 'default': None},
+        '_resource_name': {'kwarg': 'resource_name', 'default': None},
     }
 
     def __init__(self, model: Type[Model],
