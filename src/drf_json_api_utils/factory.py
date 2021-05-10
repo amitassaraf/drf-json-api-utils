@@ -75,53 +75,111 @@ def get_dict_by_methods(view_type, allowed_http_methods):
 class JsonApiModelViewBuilder:
     DEFAULT_RELATED_LIMIT = 100
 
+    ATTRIBUTES = {
+        '_model': {'kwarg': 'model', 'default': None},
+        '_fields': {'kwarg': None, 'default': {}},
+        '_filters': {'kwarg': None, 'default': {}},
+        '_computed_filters': {'kwarg': None, 'default': {}},
+        '_relations': {'kwarg': None, 'default': {}},
+        '_generic_relations': {'kwarg': None, 'default': {}},
+        '_custom_fields': {'kwarg': None, 'default': {}},
+        '_api_version': {'kwarg': 'api_version', 'default': ''},
+        '_related_limit': {'kwarg': None, 'default': DEFAULT_RELATED_LIMIT},
+        '_permission_classes': {'kwarg': 'permission_classes', 'default': []},
+        '_authentication_classes': {'kwarg': 'authentication_classes', 'default': []},
+        '_before_create_callback': {'kwarg': None, 'default': None},
+        '_after_create_callback': {'kwarg': None, 'default': None},
+        '_after_get_callback': {'kwarg': None, 'default': None},
+        '_before_update_callback': {'kwarg': None, 'default': None},
+        '_after_update_callback': {'kwarg': None, 'default': None},
+        '_before_delete_callback': {'kwarg': None, 'default': None},
+        '_after_delete_callback': {'kwarg': None, 'default': None},
+        '_before_list_callback': {'kwarg': None, 'default': None},
+        '_after_list_callback': {'kwarg': None, 'default': None},
+        '_before_raw_response': {'kwarg': None, 'default': None},
+        '_expose_related_views': {'kwarg': 'expose_related_views', 'default': None},
+        '_is_admin': {'kwarg': 'is_admin', 'default': None},
+        '_spice_queryset': {'kwarg': 'permitted_objects', 'default': None},
+        '_include_plugins': {'kwarg': 'include_plugins', 'default': []},
+        '_plugin_options': {'kwarg': 'plugin_options', 'default': {}},
+        '_allowed_methods': {'kwarg': 'allowed_methods', 'default': []},
+        '_primary_key_name': {'kwarg': 'primary_key_name', 'default': 'id'},
+        '_resource_name': {'kwarg': '_resource_name', 'default': None},
+    }
+
     def __init__(self, model: Type[Model],
                  primary_key_name: Optional[str] = None,
                  resource_name: Optional[str] = None,
                  api_version: Optional[str] = '',
-                 allowed_methods=json_api_spec_http_methods.HTTP_ALL,
+                 allowed_methods: Optional[List[str]] = json_api_spec_http_methods.HTTP_ALL,
                  permission_classes: Optional[Sequence[Type[BasePermission]]] = None,
                  authentication_classes: Optional[Sequence[Type[BaseAuthentication]]] = None,
                  queryset: Optional[QuerySet] = None,
                  permitted_objects: Optional[Callable[[Request, QuerySet], QuerySet]] = None,
                  include_plugins: Optional[Sequence[str]] = None,
                  plugin_options: Optional[Dict[str, Any]] = None,
-                 expose_related_views: Optional[bool] = False):
-        self.__validate_http_methods(allowed_methods)
-        self._model = model
-        self._fields = {}
-        self._filters = {}
-        self._computed_filters = {}
-        self._relations = {}
-        self._generic_relations = {}
-        self._custom_fields = {}
-        self._api_version = api_version.replace('.', '').replace('-', '')
-        self._url_api_version = f'v{api_version}'
-        self._primary_key_name = primary_key_name or 'id'
-        self._allowed_methods = [*allowed_methods]
-        self._resource_name = resource_name or self._model.objects.model._meta.db_table.split('_')[-1]
-        self._related_limit = self.DEFAULT_RELATED_LIMIT
-        self._permission_classes = permission_classes or []
-        self._authentication_classes = authentication_classes or []
-        self._before_create_callback = None
-        self._after_create_callback = None
-        self._after_get_callback = None
-        self._before_update_callback = None
-        self._after_update_callback = None
-        self._before_delete_callback = None
-        self._after_delete_callback = None
-        self._before_list_callback = None
-        self._after_list_callback = None
-        self._before_raw_response = None
-        self._expose_related_views = expose_related_views
-        self._is_admin = False
+                 expose_related_views: Optional[bool] = False,
+                 is_admin: Optional[bool] = False):
+        self.override(
+            model=model,
+            primary_key_name=primary_key_name,
+            resource_name=resource_name,
+            api_version=api_version,
+            allowed_methods=allowed_methods,
+            permission_classes=permission_classes,
+            authentication_classes=authentication_classes,
+            queryset=queryset,
+            permitted_objects=permitted_objects,
+            include_plugins=include_plugins,
+            plugin_options=plugin_options,
+            expose_related_views=expose_related_views,
+            is_admin=is_admin,
+        )
+
+    @staticmethod
+    def from_view_builder(view_builder: 'JsonApiModelViewBuilder') -> 'JsonApiModelViewBuilder':
+        return deepcopy(view_builder)
+
+    def override(self, model: Optional[Type[Model]] = None,
+                 primary_key_name: Optional[str] = None,
+                 resource_name: Optional[str] = None,
+                 api_version: Optional[str] = None,
+                 allowed_methods: Optional[List[str]] = None,
+                 permission_classes: Optional[Sequence[Type[BasePermission]]] = None,
+                 authentication_classes: Optional[Sequence[Type[BaseAuthentication]]] = None,
+                 queryset: Optional[QuerySet] = None,
+                 permitted_objects: Optional[Callable[[Request, QuerySet], QuerySet]] = None,
+                 include_plugins: Optional[Sequence[str]] = None,
+                 plugin_options: Optional[Dict[str, Any]] = None,
+                 expose_related_views: Optional[bool] = None,
+                 is_admin: Optional[bool] = None) -> 'JsonApiModelViewBuilder':
+        if allowed_methods is not None:
+            self.__validate_http_methods(allowed_methods)
+
+        _locals = locals()
+        for attribute, settings in self.ATTRIBUTES.items():
+            _arg = _locals.get(settings.get("kwarg"))
+            if _arg is not None:
+                setattr(self, attribute, _arg)
+            elif not hasattr(self, attribute):
+                setattr(self, attribute, deepcopy(settings.get("default")))
+
+        self._api_version = self._api_version.replace('.', '').replace('-', '')
+        self._url_api_version = f'v{self._api_version}'
+        self._allowed_methods = [*self._allowed_methods]
+        if self._resource_name is None:
+            self._resource_name = self._model.objects.model._meta.db_table.split('_')[-1]
+
         if queryset is None:
             self._queryset = self._model.objects
         else:
             self._queryset = queryset
-        self._spice_queryset = permitted_objects
-        self._include_plugins = include_plugins or []
-        self._plugin_options = plugin_options or {}
+
+        return self
+
+    @property
+    def is_admin(self) -> bool:
+        return self._is_admin
 
     @staticmethod
     def __validate_http_methods(limit_to_http_methods: Sequence[str] = json_api_spec_http_methods.HTTP_ALL):
@@ -305,26 +363,14 @@ class JsonApiModelViewBuilder:
 
         return history_urls
 
-    def _get_admin_urls(self, ignore_swagger: bool = False) -> Sequence[partial]:
-        admin_builder = deepcopy(self)
-        if plugins.AUTO_ADMIN_VIEWS in self._include_plugins:
-            admin_builder._include_plugins = []
-        admin_builder._spice_queryset = None
-        admin_permission_class = admin_builder._plugin_options.get(plugins.AUTO_ADMIN_VIEWS, {}).get(
-            'ADMIN_PERMISSION_CLASS')
-        admin_builder._is_admin = True
+    def _build(self, url_resource_name: str = None, urls_prefix: str = None, ignore_serializer: bool = False,
+               ignore_swagger: bool = False) -> Sequence[partial]:
+        if url_resource_name is None:
+            url_resource_name = ''
 
-        if admin_permission_class is not None:
-            admin_builder._permission_classes = [*admin_builder._permission_classes, admin_permission_class]
+        if urls_prefix is None:
+            urls_prefix = 'admin/' if self._is_admin else ''
 
-        admin_urls = admin_builder._build(url_resource_name=self._resource_name, urls_prefix='admin/',
-                                          ignore_serializer=False, ignore_swagger=ignore_swagger)
-
-        return admin_urls
-
-    def _build(self, url_resource_name: str = '', urls_prefix: str = '', ignore_serializer: bool = False,
-               ignore_swagger: bool = False) -> Sequence[
-        partial]:
         method_to_serializer = {}
         if not ignore_serializer:
             for limit_to_on_retrieve in [False, True]:
@@ -523,10 +569,9 @@ class JsonApiModelViewBuilder:
                     get_method_view_set.as_view(get_dict_by_methods('get', self._allowed_methods),
                                                 name=f'get_{self._resource_name}'),
                     name=f'{"admin_view_" if self._is_admin else ""}{self._resource_name}{self._api_version}-detail'),
-                url(
-                    rf'^{urls_prefix}{url_resource_name}/(?P<{pk_name}>[^/.]+)/relationships/(?P<related_field>[^/.]+)$',
+                url(rf'^{urls_prefix}{url_resource_name}/(?P<{pk_name}>[^/.]+)/relationships/(?P<related_field>[^/.]+)$',
                     view=relationship_view.as_view(),
-                    name=f'{"admin_view_" if self._is_admin else ""}{self._resource_name}{self._api_version}-relationships')
+                    name=f'{"admin_view_" if self._is_admin else ""}{self._resource_name}{self._api_version}-relationships'),
             ])
 
             if self._expose_related_views:
@@ -535,7 +580,7 @@ class JsonApiModelViewBuilder:
                     urls.extend([
                         url(rf'^{urls_prefix}{url_resource_name}/(?P<{pk_name}>[^/.]+)/(?P<related_field>\w+)/$',
                             list_method_view_set.as_view(relation_view_dict, name=f'related_{self._resource_name}'),
-                            name=f'related-{"admin_view_" if self._is_admin else ""}{self._resource_name}{self._api_version}')
+                            name=f'related-{"admin_view_" if self._is_admin else ""}{self._resource_name}{self._api_version}'),
                     ])
 
         if plugins.DJANGO_SIMPLE_HISTORY in self._include_plugins:
@@ -546,13 +591,12 @@ class JsonApiModelViewBuilder:
             except Exception as e:
                 pass
 
-        if plugins.AUTO_ADMIN_VIEWS in self._include_plugins:
-            urls.extend(self._get_admin_urls(ignore_swagger=ignore_swagger))
-
         return urls
 
-    def get_urls(self, url_resource_name: str = '', urls_prefix: str = '', ignore_swagger: bool = False) -> Sequence[
-        partial]:
+    def get_urls(self,
+                 url_resource_name: str = None,
+                 urls_prefix: str = None,
+                 ignore_swagger: bool = False) -> Sequence[partial]:
         return self._build(url_resource_name=url_resource_name, urls_prefix=urls_prefix, ignore_swagger=ignore_swagger)
 
 
@@ -582,9 +626,14 @@ class JsonApiResourceViewBuilder:
         self._on_list_callback = None
         self._on_get_callback = None
         self._before_raw_response = None
-        self._is_admin = is_admin
+        self._is_admin = is_admin \
+            or (len(self._permission_classes) > 0 and any(getattr(pc, 'admin', False) for pc in self._permission_classes))
         self._page_size = page_size
         self._only_callbacks = only_callbacks
+
+    @property
+    def is_admin(self) -> bool:
+        return self._is_admin
 
     def __warn_if_method_not_available(self, method: str):
         if method not in self._allowed_methods:
@@ -623,8 +672,20 @@ class JsonApiResourceViewBuilder:
         self._before_raw_response = before_raw_response
         return self
 
-    def _build(self, url_resource_name: str = '', urls_prefix: str = '', urls_suffix: str = '',
-               ignore_swagger: bool = False) -> Sequence[partial]:
+    def _build(self,
+               url_resource_name: Optional[str] = None,
+               urls_prefix: Optional[str] = None,
+               urls_suffix: Optional[str] = None,
+               ignore_swagger: Optional[bool] = False) -> Sequence[partial]:
+        if url_resource_name is None:
+            url_resource_name = ''
+
+        if urls_prefix is None:
+            urls_prefix = 'admin/' if self._is_admin else ''
+
+        if urls_suffix is None:
+            urls_suffix = ''
+
         def destroy(view, request, *args, **kwargs):
             identifier = kwargs.get(self._unique_identifier, None)
 
@@ -787,22 +848,25 @@ class JsonApiResourceViewBuilder:
             ])
         return urls
 
-    def get_urls(self, url_resource_name: str = '', urls_prefix: str = '', urls_suffix: str = '',
-                 ignore_swagger: bool = False) -> Sequence[partial]:
+    def get_urls(self,
+                 url_resource_name: Optional[str] = None,
+                 urls_prefix: Optional[str] = None,
+                 urls_suffix: Optional[str] = None,
+                 ignore_swagger: Optional[bool] = False) -> Sequence[partial]:
         return self._build(url_resource_name=url_resource_name, urls_prefix=urls_prefix, urls_suffix=urls_suffix,
                            ignore_swagger=ignore_swagger)
 
 
 def json_api_view(resource_name: str,
                   api_version: Optional[str] = '',
-                  method: str = json_api_spec_http_methods.HTTP_GET,
+                  method: Optional[str] = json_api_spec_http_methods.HTTP_GET,
                   permission_classes: Optional[Sequence[Type[BasePermission]]] = None,
                   authentication_classes: Optional[Sequence[Type[BaseAuthentication]]] = None,
-                  urls_prefix: str = '',
-                  urls_suffix: str = '',
-                  multiple_resource=True,
-                  raw_items=False,
-                  page_size: int = 50) -> FunctionType:
+                  multiple_resource: Optional[bool] = True,
+                  raw_items: Optional[bool] = False,
+                  page_size: Optional[int] = 50,
+                  is_admin: Optional[bool] = False,
+                  *args, **kwargs) -> FunctionType:
     def decorator(func: Callable[[Request], Tuple[Dict, int]]):
         builder = JsonApiResourceViewBuilder(action_name=resource_name,
                                              api_version=api_version,
@@ -811,22 +875,18 @@ def json_api_view(resource_name: str,
                                              authentication_classes=authentication_classes,
                                              raw_items=raw_items,
                                              page_size=page_size,
-                                             only_callbacks=True)
+                                             only_callbacks=True,
+                                             is_admin=is_admin)
         if method == json_api_spec_http_methods.HTTP_GET and multiple_resource:
-            return builder.on_list(list_callback=func) \
-                .get_urls(urls_prefix=urls_prefix, urls_suffix=urls_suffix)
+            return builder.on_list(list_callback=func)
         elif method == json_api_spec_http_methods.HTTP_GET:
-            return builder.on_get(get_callback=func) \
-                .get_urls(urls_prefix=urls_prefix, urls_suffix=urls_suffix)
+            return builder.on_get(get_callback=func)
         elif method == json_api_spec_http_methods.HTTP_POST:
-            return builder.on_create(create_callback=func) \
-                .get_urls(urls_prefix=urls_prefix, urls_suffix=urls_suffix)
+            return builder.on_create(create_callback=func)
         elif method == json_api_spec_http_methods.HTTP_DELETE:
-            return builder.on_delete(delete_callback=func) \
-                .get_urls(urls_prefix=urls_prefix, urls_suffix=urls_suffix)
+            return builder.on_delete(delete_callback=func)
         elif method == json_api_spec_http_methods.HTTP_PATCH:
-            return builder.on_update(update_callback=func) \
-                .get_urls(urls_prefix=urls_prefix, urls_suffix=urls_suffix)
+            return builder.on_update(update_callback=func)
         else:
             raise Exception(f'Does not support method {method}')
 
