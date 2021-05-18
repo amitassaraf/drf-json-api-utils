@@ -227,6 +227,7 @@ class AlchemyJsonApiViewBuilder:
                                                resource_name=self._resource_name,
                                                api_version=self._api_version,
                                                fields=self._fields,
+                                               is_admin=self._is_admin,
                                                support_relations=self._relations,
                                                custom_field_handlers=self._custom_field_handlers,
                                                custom_fields=self._custom_fields)

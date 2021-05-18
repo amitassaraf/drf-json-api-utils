@@ -40,6 +40,7 @@ def auto_construct_schema(alchemy_model: Type,
                           resource_name: str,
                           api_version: str,
                           fields: Sequence[str],
+                          is_admin: bool = False,
                           support_relations: Optional[List[AlchemyRelation]] = None,
                           custom_field_handlers: Optional[Dict[Type, Callable]] = None,
                           custom_fields: Optional[Dict[str, CustomField]] = None):
@@ -163,7 +164,7 @@ def auto_construct_schema(alchemy_model: Type,
     for name, custom_field in custom_fields.items():
         generated_custom_fields[name] = Function(custom_field.callback)
 
-    new_serializer = type(f'{alchemy_model.__tablename__}Serializer', (SQLAlchemySchema,), {
+    new_serializer = type(f'{"Admin" if is_admin else ""}{resource_name}Serializer', (SQLAlchemySchema,), {
         'id': marshmallow.fields.String(dump_only=True),
         **generated_fields,
         **generated_custom_fields,
