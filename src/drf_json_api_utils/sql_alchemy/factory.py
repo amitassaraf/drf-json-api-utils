@@ -92,7 +92,8 @@ class AlchemyJsonApiViewBuilder:
             skip_plugins=skip_plugins,
             include_plugins=include_plugins,
             plugin_options=plugin_options,
-            custom_field_handlers=custom_field_handlers
+            custom_field_handlers=custom_field_handlers,
+            is_admin=is_admin,
         )
 
     @staticmethod
