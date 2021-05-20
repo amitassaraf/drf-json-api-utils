@@ -56,6 +56,7 @@ class AlchemyJsonApiViewBuilder:
         '_computed_filters': {'kwarg': None, 'default': {}},
         '_api_version': {'kwarg': 'api_version', 'default': ''},
         '_is_admin': {'kwarg': 'is_admin', 'default': False},
+        '_always_include': {'kwarg': 'always_include', 'default': False},
         '_skip_plugins': {'kwarg': 'skip_plugins', 'default': []},
         '_plugin_options': {'kwarg': 'plugin_options', 'default': {}},
     }
@@ -76,7 +77,8 @@ class AlchemyJsonApiViewBuilder:
                  include_plugins: Optional[Sequence[str]] = None,
                  plugin_options: Optional[Dict[str, Any]] = None,
                  custom_field_handlers: Optional[Dict[Type, Callable]] = None,
-                 is_admin: Optional[bool] = False):
+                 is_admin: Optional[bool] = False,
+                 always_include: Optional[bool] = False):
         self.override(
             alchemy_model=alchemy_model,
             resource_name=resource_name,
@@ -94,6 +96,7 @@ class AlchemyJsonApiViewBuilder:
             plugin_options=plugin_options,
             custom_field_handlers=custom_field_handlers,
             is_admin=is_admin,
+            always_include=always_include,
         )
 
     @staticmethod
@@ -116,7 +119,8 @@ class AlchemyJsonApiViewBuilder:
                  include_plugins: Optional[Sequence[str]] = None,
                  plugin_options: Optional[Dict[str, Any]] = None,
                  custom_field_handlers: Optional[Dict[Type, Callable]] = None,
-                 is_admin: Optional[bool] = False) -> 'AlchemyJsonApiViewBuilder':
+                 is_admin: Optional[bool] = False,
+                 always_include: Optional[bool] = False) -> 'AlchemyJsonApiViewBuilder':
 
         _locals = locals()
         for attribute, settings in self.ATTRIBUTES.items():
@@ -136,6 +140,10 @@ class AlchemyJsonApiViewBuilder:
     @property
     def is_admin(self) -> bool:
         return self._is_admin
+
+    @property
+    def always_include(self) -> bool:
+        return self._always_include
 
     def __warn_if_method_not_available(self, method: str):
         if method not in self._allowed_methods:
@@ -441,6 +449,7 @@ class AlchemyJsonApiViewBuilder:
                                              permission_classes=self._permission_classes,
                                              authentication_classes=self._authentication_classes,
                                              is_admin=self._is_admin,
+                                             always_include=self._always_include,
                                              page_size=self._page_size,
                                              raw_items=True)
 

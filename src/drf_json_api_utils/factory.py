@@ -99,6 +99,7 @@ class JsonApiModelViewBuilder:
         '_before_raw_response': {'kwarg': None, 'default': None},
         '_expose_related_views': {'kwarg': 'expose_related_views', 'default': None},
         '_is_admin': {'kwarg': 'is_admin', 'default': None},
+        '_always_include': {'kwarg': 'always_include', 'default': None},
         '_spice_queryset': {'kwarg': 'permitted_objects', 'default': None},
         '_include_plugins': {'kwarg': 'include_plugins', 'default': []},
         '_plugin_options': {'kwarg': 'plugin_options', 'default': {}},
@@ -119,7 +120,8 @@ class JsonApiModelViewBuilder:
                  include_plugins: Optional[Sequence[str]] = None,
                  plugin_options: Optional[Dict[str, Any]] = None,
                  expose_related_views: Optional[bool] = False,
-                 is_admin: Optional[bool] = False):
+                 is_admin: Optional[bool] = False,
+                 always_include: Optional[bool] = False):
         self.override(
             model=model,
             primary_key_name=primary_key_name,
@@ -134,6 +136,7 @@ class JsonApiModelViewBuilder:
             plugin_options=plugin_options,
             expose_related_views=expose_related_views,
             is_admin=is_admin,
+            always_include=always_include,
         )
 
     @staticmethod
@@ -152,7 +155,8 @@ class JsonApiModelViewBuilder:
                  include_plugins: Optional[Sequence[str]] = None,
                  plugin_options: Optional[Dict[str, Any]] = None,
                  expose_related_views: Optional[bool] = None,
-                 is_admin: Optional[bool] = None) -> 'JsonApiModelViewBuilder':
+                 is_admin: Optional[bool] = None,
+                 always_include: Optional[bool] = False) -> 'JsonApiModelViewBuilder':
         if allowed_methods is not None:
             self.__validate_http_methods(allowed_methods)
 
@@ -180,6 +184,10 @@ class JsonApiModelViewBuilder:
     @property
     def is_admin(self) -> bool:
         return self._is_admin
+
+    @property
+    def always_include(self) -> bool:
+        return self._always_include
 
     @staticmethod
     def __validate_http_methods(limit_to_http_methods: Sequence[str] = json_api_spec_http_methods.HTTP_ALL):
@@ -610,6 +618,7 @@ class JsonApiResourceViewBuilder:
                  authentication_classes: Sequence[Type[BaseAuthentication]] = None,
                  raw_items=False,
                  is_admin: Optional[bool] = False,
+                 always_include: Optional[bool] = False,
                  only_callbacks: Optional[bool] = False,
                  page_size: int = 50):
         self._allowed_methods = [*allowed_methods]
@@ -626,6 +635,7 @@ class JsonApiResourceViewBuilder:
         self._on_list_callback = None
         self._on_get_callback = None
         self._before_raw_response = None
+        self._always_include = always_include
         self._is_admin = is_admin \
             or (len(self._permission_classes) > 0 and any(getattr(pc, 'admin', False) for pc in self._permission_classes))
         self._page_size = page_size
@@ -634,6 +644,10 @@ class JsonApiResourceViewBuilder:
     @property
     def is_admin(self) -> bool:
         return self._is_admin
+
+    @property
+    def always_include(self) -> bool:
+        return self._always_include
 
     def __warn_if_method_not_available(self, method: str):
         if method not in self._allowed_methods:
@@ -866,6 +880,7 @@ def json_api_view(resource_name: str,
                   raw_items: Optional[bool] = False,
                   page_size: Optional[int] = 50,
                   is_admin: Optional[bool] = False,
+                  always_include: Optional[bool] = False,
                   *args, **kwargs) -> FunctionType:
     def decorator(func: Callable[[Request], Tuple[Dict, int]]):
         builder = JsonApiResourceViewBuilder(action_name=resource_name,
@@ -876,7 +891,8 @@ def json_api_view(resource_name: str,
                                              raw_items=raw_items,
                                              page_size=page_size,
                                              only_callbacks=True,
-                                             is_admin=is_admin)
+                                             is_admin=is_admin,
+                                             always_include=always_include)
         if method == json_api_spec_http_methods.HTTP_GET and multiple_resource:
             return builder.on_list(list_callback=func)
         elif method == json_api_spec_http_methods.HTTP_GET:
