@@ -833,7 +833,7 @@ class JsonApiResourceViewBuilder:
 
         if len(urls_prefix) > 0:
             if len(self._url_api_version) > 1 and self._url_api_version not in urls_prefix:
-                urls_prefix = f'{urls_prefix.rstrip("/")}/{self._url_api_version}'
+                urls_prefix = f'{urls_prefix.rstrip("/")}/{self._url_api_version}/'
         elif len(self._url_api_version) > 1:
             urls_prefix = self._url_api_version
 
