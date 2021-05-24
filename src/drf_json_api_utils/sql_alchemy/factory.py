@@ -287,7 +287,7 @@ class AlchemyJsonApiViewBuilder:
                                                                with_data=False)
                     rendered_includes.extend(include_result)
                 else:
-                    raise Exception(f'Include {include} not supported on type {self._resource_name}')
+                    LOGGER.error(f'Include {include} not supported on type {self._resource_name}')
             return rendered_includes
 
         permitted_objects = self._permitted_objects or default_permitted_objects
