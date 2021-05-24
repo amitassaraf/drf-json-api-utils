@@ -51,6 +51,7 @@ class AlchemyJsonApiViewBuilder:
         '_before_list_callback': {'kwarg': None, 'default': None},
         '_after_list_callback': {'kwarg': None, 'default': None},
         '_before_get_response': {'kwarg': None, 'default': None},
+        '_after_serialization': {'kwarg': None, 'default': None},
         '_relations': {'kwarg': None, 'default': []},
         '_custom_fields': {'kwarg': None, 'default': {}},
         '_computed_filters': {'kwarg': None, 'default': {}},
@@ -199,6 +200,11 @@ class AlchemyJsonApiViewBuilder:
 
     def after_list(self, after_list_callback: Callable[[Any], Any] = None) -> 'AlchemyJsonApiViewBuilder':
         self._after_list_callback = after_list_callback
+        self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_GET)
+        return self
+
+    def after_serialization(self, after_serialization: Callable[[Any], Any] = None) -> 'AlchemyJsonApiViewBuilder':
+        self._after_serialization = after_serialization
         self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_GET)
         return self
 
@@ -351,6 +357,10 @@ class AlchemyJsonApiViewBuilder:
                     return [{'errors': [str(e)]}], [], 0, getattr(e, 'http_status', HTTP_500_INTERNAL_SERVER_ERROR)
 
             result = schema_many.json_api_dump(objects, self._resource_name)
+
+            if self._after_serialization:
+                result, rendered_includes = self._after_serialization(result, rendered_includes)
+
             return result, rendered_includes, pagination.total_results, HTTP_200_OK
 
         def object_create(request, data, *args, **kwargs) -> Tuple[Dict, str, int]:
