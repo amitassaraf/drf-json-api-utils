@@ -771,10 +771,15 @@ class JsonApiResourceViewBuilder:
             identifier = kwargs.get(self._unique_identifier, None)
 
             if self._on_get_callback is not None:
-                data, status = self._on_get_callback(request, identifier, *args, **kwargs)
+                params = request.query_params
+                include = params.get('include', '')
+                includes = include.split(',') if include else []
+
+                data, included, status = self._on_get_callback(request, identifier, includes, *args, **kwargs)
                 if self._raw_items:
                     return Response(data={'id': identifier, 'type': self._resource_name, 'attributes': data},
                                     status=status)
+                data.update({'included': included})
                 return Response(data=data, status=status)
 
         class Renderer(JSONRenderer):
