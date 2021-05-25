@@ -300,7 +300,7 @@ class AlchemyJsonApiViewBuilder:
 
         permitted_objects = self._permitted_objects or default_permitted_objects
 
-        def object_get(request, identifier, *args, **kwargs) -> Tuple[Dict, int]:
+        def object_get(request, identifier, includes, *args, **kwargs) -> Tuple[Dict, int]:
             permitted_query = permitted_objects(request,
                                                 self._base_query() if self._base_query is not None else self._model.objects.query())
 
@@ -317,12 +317,13 @@ class AlchemyJsonApiViewBuilder:
             if self._after_get_callback:
                 obj = self._after_get_callback(request, obj)
 
+            rendered_includes = render_includes(includes, [obj])
             result = schema.json_api_dump(obj, self._resource_name)
 
             if self._before_get_response:
                 result = self._before_get_response(request, obj, result)
 
-            return result, HTTP_200_OK
+            return result, rendered_includes, HTTP_200_OK
 
         def object_list(request, page, filters=None, includes=None, *args, **kwargs) -> Tuple[List, List, int, int]:
             permitted_query = permitted_objects(request,
