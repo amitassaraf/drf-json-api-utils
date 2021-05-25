@@ -137,7 +137,7 @@ class AlchemyJsonApiViewBuilder:
                     self._skip_plugins.remove(item)
 
         return self
-    
+
     @property
     def is_admin(self) -> bool:
         return self._is_admin
@@ -234,10 +234,15 @@ class AlchemyJsonApiViewBuilder:
                  url_resource_name: Optional[str] = None,
                  urls_prefix: Optional[str] = None,
                  ignore_serializer: Optional[bool] = False) -> List[url]:
+        SchemaType = None
         if ignore_serializer:
-            SchemaType = list(filter(lambda item: item['api_version'] == self._api_version,
-                                     _TYPE_TO_SCHEMA[self._model]))[0]['serializer']
-        else:
+            SchemaType = list(
+                filter(lambda item: item['api_version'] == self._api_version and item['is_admin'] == self.is_admin,
+                       _TYPE_TO_SCHEMA[self._model]))
+            if SchemaType:
+                SchemaType = SchemaType[0]['serializer']
+
+        if not SchemaType:
             SchemaType = auto_construct_schema(self._model,
                                                resource_name=self._resource_name,
                                                api_version=self._api_version,
@@ -279,8 +284,11 @@ class AlchemyJsonApiViewBuilder:
                                                                          [getattr(item, local_column.name) for item in
                                                                           objects]
                                                                      )).all()
-                    schema = list(filter(lambda item: item['api_version'] == self._api_version,
-                                _TYPE_TO_SCHEMA[target_model]))[0]
+                    relevant_relation = next(
+                        (relation for relation in self._relations if relation.field_name == include), None)
+                    schema = list(filter(lambda item: item['api_version'] == relevant_relation.api_version and item[
+                        'is_admin'] == self.is_admin,
+                                         _TYPE_TO_SCHEMA[target_model]))[0]
                     target_many = schema['serializer'](many=True)
                     #  Serialize all the included objects to JSON:API
                     include_result = target_many.json_api_dump(to_include, schema['resource_name'],

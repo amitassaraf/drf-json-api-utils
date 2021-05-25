@@ -184,5 +184,5 @@ def auto_construct_schema(alchemy_model: Type,
     if alchemy_model not in _TYPE_TO_SCHEMA:
         _TYPE_TO_SCHEMA[alchemy_model] = []
     _TYPE_TO_SCHEMA[alchemy_model].append({'serializer': new_serializer, 'resource_name': resource_name,
-                                          'api_version': api_version})
+                                          'api_version': api_version, 'is_admin': is_admin})
     return new_serializer
