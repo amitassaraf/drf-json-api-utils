@@ -208,6 +208,11 @@ class AlchemyJsonApiViewBuilder:
         self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_GET)
         return self
 
+    def add_field(self, name: str) -> 'AlchemyJsonApiViewBuilder':
+        if name not in self._fields:
+            self._fields.append(name)
+        return self
+
     def add_relation(self, field: str,
                      model: Type,
                      resource_name: str,
