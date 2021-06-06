@@ -31,7 +31,7 @@ from .json_api_spec_http_methods import HTTP_GET, HTTP_POST, HTTP_PATCH, HTTP_DE
 from .namespace import _append_to_namespace, _RESOURCE_NAME_TO_SPICE, _MODEL_TO_SERIALIZERS
 from .types import CustomField, Filter, Relation, GenericRelation, ComputedFilter, RelatedResource
 
-FILTER_REGEX = re.compile(r'filter\[(?P<field>[\w_\-]+)(?P<op>\.[\w_\-]+)?\]', re.IGNORECASE)
+FILTER_REGEX = re.compile(r'filter\[(?P<field>[\w_\-]+)[\.]*(?P<op>[\w_\-]+)?\]', re.IGNORECASE)
 FILTER_MAP = {
     'is_null': 'is_null',
     'is_not_null': 'is_not_null',
@@ -738,9 +738,11 @@ class JsonApiResourceViewBuilder:
                 except:
                     pass
                 if match:
+                    op = FILTER_MAP.get(match.groupdict()['op'], '==')
+                    multiple_values = op in ['in', 'not_in', 'any', 'not_any']
                     filters.append({'field': match.groupdict()['field'],
-                                    'op': FILTER_MAP.get(match.groupdict()['op'], '=='),
-                                    'value': value})
+                                    'op': op,
+                                    'value': value.split(',') if multiple_values else value})
             page = int(params.get('page_number', 1))
             include = params.get('include', '')
             includes = include.split(',') if include else []
