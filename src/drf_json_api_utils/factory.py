@@ -25,7 +25,7 @@ from rest_framework_json_api.views import RelationshipView, ModelViewSet
 from . import json_api_spec_http_methods
 from . import lookups as filter_lookups
 from . import plugins
-from .common import LimitedJsonApiPageNumberPagination, JsonApiSearchFilter, LOGGER
+from .common import LimitedJsonApiPageNumberPagination, JsonApiSearchFilter, LOGGER, DEFAULT_PAGE_SIZE
 from .constructors import _construct_serializer, _construct_filter_backend
 from .json_api_spec_http_methods import HTTP_GET, HTTP_POST, HTTP_PATCH, HTTP_DELETE
 from .namespace import _append_to_namespace, _RESOURCE_NAME_TO_SPICE, _MODEL_TO_SERIALIZERS
@@ -451,6 +451,7 @@ class JsonApiModelViewBuilder:
                 self._after_update_callback(view.request, instance, serializer)
 
         def perform_list(view, request, *args, **kwargs):
+            setattr(view.paginator, 'page_size', self._page_size or DEFAULT_PAGE_SIZE)
             queryset = view.filter_queryset(view.get_queryset())
 
             if self._before_list_callback is not None:
