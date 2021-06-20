@@ -106,6 +106,7 @@ class JsonApiModelViewBuilder:
         '_allowed_methods': {'kwarg': 'allowed_methods', 'default': []},
         '_primary_key_name': {'kwarg': 'primary_key_name', 'default': 'id'},
         '_resource_name': {'kwarg': 'resource_name', 'default': None},
+        '_page_size': {'kwarg': 'page_size', 'default': None},
     }
 
     def __init__(self, model: Type[Model],
@@ -156,7 +157,9 @@ class JsonApiModelViewBuilder:
                  plugin_options: Optional[Dict[str, Any]] = None,
                  expose_related_views: Optional[bool] = None,
                  is_admin: Optional[bool] = None,
-                 always_include: Optional[bool] = False) -> 'JsonApiModelViewBuilder':
+                 always_include: Optional[bool] = False,
+                 page_size: Optional[int] = None
+                 ) -> 'JsonApiModelViewBuilder':
         if allowed_methods is not None:
             self.__validate_http_methods(allowed_methods)
 
