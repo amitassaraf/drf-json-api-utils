@@ -10,6 +10,7 @@ from typing import Type, Tuple, Sequence, Dict, Callable, Any, Optional, List
 from django.apps import apps
 from django.conf.urls import url
 from django.db.models import QuerySet, Model
+from drf_json_api_utils.common import DEFAULT_PAGE_SIZE
 from rest_framework.authentication import BaseAuthentication
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import BasePermission
@@ -106,6 +107,7 @@ class JsonApiModelViewBuilder:
         '_allowed_methods': {'kwarg': 'allowed_methods', 'default': []},
         '_primary_key_name': {'kwarg': 'primary_key_name', 'default': 'id'},
         '_resource_name': {'kwarg': 'resource_name', 'default': None},
+        '_page_size': {'kwarg': 'page_size', 'default': None},
     }
 
     def __init__(self, model: Type[Model],
@@ -156,7 +158,8 @@ class JsonApiModelViewBuilder:
                  plugin_options: Optional[Dict[str, Any]] = None,
                  expose_related_views: Optional[bool] = None,
                  is_admin: Optional[bool] = None,
-                 always_include: Optional[bool] = False) -> 'JsonApiModelViewBuilder':
+                 always_include: Optional[bool] = False,
+                 page_size: Optional[int] = None) -> 'JsonApiModelViewBuilder':
         if allowed_methods is not None:
             self.__validate_http_methods(allowed_methods)
 
@@ -476,11 +479,15 @@ class JsonApiModelViewBuilder:
                     return str.encode(response)
                 return response
 
+        custom_paginator = type(f'PaginatorOf{self._page_size or DEFAULT_PAGE_SIZE}Pages', (LimitedJsonApiPageNumberPagination,), {
+            'page_size': self._page_size or DEFAULT_PAGE_SIZE
+        })
+
         base_model_view_set = type(f'{self._resource_name}JSONApiModelViewSet{self._api_version}', (ModelViewSet,), {
             'renderer_classes': (Renderer,),
             'parser_classes': (JSONParser, FormParser, MultiPartParser),
             'metadata_class': JSONAPIMetadata,
-            'pagination_class': LimitedJsonApiPageNumberPagination,
+            'pagination_class': custom_paginator,
             'filter_backends': (
                 QueryParameterValidationFilter, OrderingFilter, filter_backend, JsonApiSearchFilter),
             'resource_name': self._resource_name,
@@ -620,7 +627,7 @@ class JsonApiResourceViewBuilder:
                  is_admin: Optional[bool] = False,
                  always_include: Optional[bool] = False,
                  only_callbacks: Optional[bool] = False,
-                 page_size: int = 50):
+                 page_size: int = DEFAULT_PAGE_SIZE):
         self._allowed_methods = [*allowed_methods]
         self._resource_name = action_name
         self._raw_items = not raw_items
@@ -795,13 +802,17 @@ class JsonApiResourceViewBuilder:
                     return str.encode(response)
                 return response
 
+        custom_paginator = type(f'PaginatorOf{self._page_size or DEFAULT_PAGE_SIZE}Pages', (LimitedJsonApiPageNumberPagination,), {
+            'page_size': self._page_size or DEFAULT_PAGE_SIZE
+        })
+
         patch_view_set = None
         if any([self._on_update_callback, self._on_delete_callback, self._on_get_callback]) or not self._only_callbacks:
             patch_view_set = type(f'{self._resource_name}ChangeJSONApiActionViewSet{self._api_version}', (ViewSet,), {
                 'renderer_classes': (Renderer,),
                 'parser_classes': (JSONParser, FormParser, MultiPartParser),
                 'metadata_class': JSONAPIMetadata,
-                'pagination_class': LimitedJsonApiPageNumberPagination,
+                'pagination_class': custom_paginator,
                 'filter_backends': (
                     QueryParameterValidationFilter, OrderingFilter, JsonApiSearchFilter),
                 'resource_name': self._resource_name,
@@ -822,7 +833,7 @@ class JsonApiResourceViewBuilder:
                 'renderer_classes': (Renderer,),
                 'parser_classes': (JSONParser, FormParser, MultiPartParser),
                 'metadata_class': JSONAPIMetadata,
-                'pagination_class': LimitedJsonApiPageNumberPagination,
+                'pagination_class': custom_paginator,
                 'filter_backends': (
                     QueryParameterValidationFilter, OrderingFilter, JsonApiSearchFilter),
                 'resource_name': None,
