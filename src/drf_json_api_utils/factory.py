@@ -677,7 +677,7 @@ class JsonApiResourceViewBuilder:
         self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_GET)
         return self
 
-    def on_get(self, get_callback: Callable[[Request], Tuple[Dict, int]] = None) -> 'JsonApiResourceViewBuilder':
+    def on_get(self, get_callback: Callable[[Request], Tuple[Dict, List, int]] = None) -> 'JsonApiResourceViewBuilder':
         self._on_get_callback = get_callback
         self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_GET)
         return self

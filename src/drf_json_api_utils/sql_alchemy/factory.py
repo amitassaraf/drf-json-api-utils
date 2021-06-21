@@ -317,7 +317,7 @@ class AlchemyJsonApiViewBuilder:
                 obj = None
             finally:
                 if not obj:
-                    return {}, HTTP_404_NOT_FOUND
+                    return {}, [], HTTP_404_NOT_FOUND
 
             if self._after_get_callback:
                 obj = self._after_get_callback(request, obj)
