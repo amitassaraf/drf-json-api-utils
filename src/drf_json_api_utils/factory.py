@@ -26,7 +26,7 @@ from rest_framework_json_api.views import RelationshipView, ModelViewSet
 from . import json_api_spec_http_methods
 from . import lookups as filter_lookups
 from . import plugins
-from .common import LimitedJsonApiPageNumberPagination, JsonApiSearchFilter, LOGGER
+from .common import LimitedJsonApiPageNumberPagination, JsonApiSearchFilter, LOGGER, JsonApiGlobalSettings
 from .constructors import _construct_serializer, _construct_filter_backend
 from .json_api_spec_http_methods import HTTP_GET, HTTP_POST, HTTP_PATCH, HTTP_DELETE
 from .namespace import _append_to_namespace, _RESOURCE_NAME_TO_SPICE, _MODEL_TO_SERIALIZERS
@@ -140,6 +140,7 @@ class JsonApiModelViewBuilder:
             is_admin=is_admin,
             always_include=always_include,
         )
+        self.settings = JsonApiGlobalSettings()
 
     @staticmethod
     def from_view_builder(view_builder: 'JsonApiModelViewBuilder') -> 'JsonApiModelViewBuilder':
@@ -647,6 +648,7 @@ class JsonApiResourceViewBuilder:
             or (len(self._permission_classes) > 0 and any(getattr(pc, 'admin', False) for pc in self._permission_classes))
         self._page_size = page_size
         self._only_callbacks = only_callbacks
+        self.settings = JsonApiGlobalSettings()
 
     @property
     def is_admin(self) -> bool:

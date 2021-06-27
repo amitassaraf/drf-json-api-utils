@@ -1,5 +1,4 @@
 from copy import deepcopy
-from functools import partial
 from typing import Type, Sequence, Tuple, Dict, List, Optional, Callable, Any
 
 import traceback
@@ -17,11 +16,11 @@ from sqlalchemy_filters import apply_filters
 from sqlalchemy_filters import apply_pagination
 from django.conf.urls import url
 
-from drf_json_api_utils import json_api_spec_http_methods, JsonApiResourceViewBuilder, plugins, CustomField
+from drf_json_api_utils import json_api_spec_http_methods, JsonApiResourceViewBuilder, CustomField
 from drf_json_api_utils.sql_alchemy.constructors import auto_construct_schema, AlchemyRelation
 from drf_json_api_utils.sql_alchemy.types import AlchemyComputedFilter
 from .namespace import _TYPE_TO_SCHEMA
-from ..common import LOGGER
+from ..common import LOGGER, JsonApiGlobalSettings
 
 
 class AlchemyJsonApiViewBuilder:
@@ -99,6 +98,7 @@ class AlchemyJsonApiViewBuilder:
             is_admin=is_admin,
             always_include=always_include,
         )
+        self.settings = JsonApiGlobalSettings()
 
     @staticmethod
     def from_view_builder(view_builder: 'AlchemyJsonApiViewBuilder') -> 'AlchemyJsonApiViewBuilder':
@@ -152,6 +152,10 @@ class AlchemyJsonApiViewBuilder:
                 f'You\'ve set a lifecycle callback for resource {self._resource_name}, '
                 f'which doesn\'t allow it\'s respective HTTP method through `allowed_methods`.')
 
+    def _capture_exception(self, e: Any):
+        if hasattr(self.settings, 'exception_callback'):
+            self.settings.exception_callback(e)
+
     def before_create(self, before_create_callback: Callable[[Any], Any] = None) -> 'AlchemyJsonApiViewBuilder':
         self._before_create_callback = before_create_callback
         self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_POST)
@@ -203,7 +207,7 @@ class AlchemyJsonApiViewBuilder:
         self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_GET)
         return self
 
-    def after_serialization(self, after_serialization: Callable[[Any], Any] = None) -> 'AlchemyJsonApiViewBuilder':
+    def after_serialization(self, after_serialization: Callable[[Any, Any], Any] = None) -> 'AlchemyJsonApiViewBuilder':
         self._after_serialization = after_serialization
         self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_GET)
         return self
@@ -359,21 +363,21 @@ class AlchemyJsonApiViewBuilder:
                 query = self._before_list_callback(request, query)
 
             #  Fetch the values from DB
+            result = {}
             objects = query.all()
-
             rendered_includes = render_includes(includes, objects)
 
             if self._after_list_callback:
                 try:
                     objects = self._after_list_callback(request, objects)
+                    result = schema_many.json_api_dump(objects, self._resource_name)
+
+                    if self._after_serialization:
+                        result, rendered_includes = self._after_serialization(request, result, rendered_includes)
+
                 except Exception as e:
-                    traceback.print_exc()
+                    self._capture_exception(e)
                     return [{'errors': [str(e)]}], [], 0, getattr(e, 'http_status', HTTP_500_INTERNAL_SERVER_ERROR)
-
-            result = schema_many.json_api_dump(objects, self._resource_name)
-
-            if self._after_serialization:
-                result, rendered_includes = self._after_serialization(request, result, rendered_includes)
 
             return result, rendered_includes, pagination.total_results, HTTP_200_OK
 
@@ -386,7 +390,7 @@ class AlchemyJsonApiViewBuilder:
                 try:
                     attributes = self._before_create_callback(request, attributes)
                 except Exception as e:
-                    traceback.print_exc()
+                    self._capture_exception(e)
                     return {'errors': [str(e)]}, '', getattr(e, 'http_status', HTTP_500_INTERNAL_SERVER_ERROR)
 
             try:
@@ -401,7 +405,7 @@ class AlchemyJsonApiViewBuilder:
                 try:
                     self._after_create_callback(request, attributes, obj)
                 except Exception as e:
-                    traceback.print_exc()
+                    self._capture_exception(e)
                     return {'errors': [str(e)]}, '', getattr(e, 'http_status', HTTP_500_INTERNAL_SERVER_ERROR)
                 obj.refresh_from_db()
 
@@ -425,7 +429,7 @@ class AlchemyJsonApiViewBuilder:
                 try:
                     attributes = self._before_update_callback(request, attributes, obj)
                 except Exception as e:
-                    traceback.print_exc()
+                    self._capture_exception(e)
                     return {'errors': [str(e)]}, getattr(e, 'http_status', HTTP_500_INTERNAL_SERVER_ERROR)
                 obj.refresh_from_db()
 
@@ -438,7 +442,7 @@ class AlchemyJsonApiViewBuilder:
                 try:
                     self._after_update_callback(request, obj)
                 except Exception as e:
-                    traceback.print_exc()
+                    self._capture_exception(e)
                     return {'errors': [str(e)]}, getattr(e, 'http_status', HTTP_500_INTERNAL_SERVER_ERROR)
                 obj.refresh_from_db()
 
@@ -453,7 +457,7 @@ class AlchemyJsonApiViewBuilder:
                 try:
                     obj = self._before_delete_callback(request, obj)
                 except Exception as e:
-                    traceback.print_exc()
+                    self._capture_exception(e)
                     return getattr(e, 'http_status', HTTP_500_INTERNAL_SERVER_ERROR)
             if obj:
                 obj.delete()
@@ -462,7 +466,7 @@ class AlchemyJsonApiViewBuilder:
                     try:
                         self._after_delete_callback(request, obj)
                     except Exception as e:
-                        traceback.print_exc()
+                        self._capture_exception(e)
                         return getattr(e, 'http_status', HTTP_500_INTERNAL_SERVER_ERROR)
             return HTTP_204_NO_CONTENT
 
