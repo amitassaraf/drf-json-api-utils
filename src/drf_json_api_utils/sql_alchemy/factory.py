@@ -153,7 +153,6 @@ class AlchemyJsonApiViewBuilder:
                 f'which doesn\'t allow it\'s respective HTTP method through `allowed_methods`.')
 
     def _capture_exception(self, e: Any):
-        traceback.print_exc()
         if hasattr(self.settings, 'exception_callback'):
             self.settings.exception_callback(e)
 
