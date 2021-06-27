@@ -373,7 +373,7 @@ class AlchemyJsonApiViewBuilder:
             result = schema_many.json_api_dump(objects, self._resource_name)
 
             if self._after_serialization:
-                result, rendered_includes = self._after_serialization(result, rendered_includes)
+                result, rendered_includes = self._after_serialization(request, result, rendered_includes)
 
             return result, rendered_includes, pagination.total_results, HTTP_200_OK
 
