@@ -363,21 +363,21 @@ class AlchemyJsonApiViewBuilder:
                 query = self._before_list_callback(request, query)
 
             #  Fetch the values from DB
-            result = {}
             objects = query.all()
             rendered_includes = render_includes(includes, objects)
 
-            if self._after_list_callback:
-                try:
+            try:
+                if self._after_list_callback:
                     objects = self._after_list_callback(request, objects)
-                    result = schema_many.json_api_dump(objects, self._resource_name)
 
-                    if self._after_serialization:
-                        result, rendered_includes = self._after_serialization(request, result, rendered_includes)
+                result = schema_many.json_api_dump(objects, self._resource_name)
 
-                except Exception as e:
-                    self._capture_exception(e)
-                    return [{'errors': [str(e)]}], [], 0, getattr(e, 'http_status', HTTP_500_INTERNAL_SERVER_ERROR)
+                if self._after_serialization:
+                    result, rendered_includes = self._after_serialization(request, result, rendered_includes)
+
+            except Exception as e:
+                self._capture_exception(e)
+                return [{'errors': [str(e)]}], [], 0, getattr(e, 'http_status', HTTP_500_INTERNAL_SERVER_ERROR)
 
             return result, rendered_includes, pagination.total_results, HTTP_200_OK
 
