@@ -303,8 +303,7 @@ class AlchemyJsonApiViewBuilder:
                     include_result = target_many.json_api_dump(to_include, schema['resource_name'],
                                                                with_data=False)
                     rendered_includes.extend(include_result)
-                else:
-                    LOGGER.error(f'Include {include} not supported on type {self._resource_name}')
+
             return rendered_includes
 
         permitted_objects = self._permitted_objects or default_permitted_objects
