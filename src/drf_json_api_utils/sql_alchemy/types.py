@@ -18,3 +18,7 @@ class AlchemyRelation:
 class AlchemyComputedFilter:
     name: str
     filter_func: Callable[[Query, str, str], Query]
+
+
+class OKAlreadyExists(Exception):
+    pass

@@ -18,7 +18,7 @@ from django.conf.urls import url
 
 from drf_json_api_utils import json_api_spec_http_methods, JsonApiResourceViewBuilder, CustomField
 from drf_json_api_utils.sql_alchemy.constructors import auto_construct_schema, AlchemyRelation
-from drf_json_api_utils.sql_alchemy.types import AlchemyComputedFilter
+from drf_json_api_utils.sql_alchemy.types import AlchemyComputedFilter, OKAlreadyExists
 from .namespace import _TYPE_TO_SCHEMA
 from ..common import LOGGER, JsonApiGlobalSettings
 
@@ -388,6 +388,8 @@ class AlchemyJsonApiViewBuilder:
             if self._before_create_callback:
                 try:
                     attributes = self._before_create_callback(request, attributes)
+                except OKAlreadyExists:
+                    return {'status': 'OK'}, '', HTTP_201_CREATED
                 except Exception as e:
                     self._capture_exception(e)
                     return {'errors': [str(e)]}, '', getattr(e, 'http_status', HTTP_500_INTERNAL_SERVER_ERROR)
