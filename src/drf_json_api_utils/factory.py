@@ -6,11 +6,10 @@ from copy import deepcopy
 from functools import partial
 from types import FunctionType
 from typing import Type, Tuple, Sequence, Dict, Callable, Any, Optional, List
-
 from django.apps import apps
 from django.conf.urls import url
 from django.db.models import QuerySet, Model
-from drf_json_api_utils.common import DEFAULT_PAGE_SIZE
+from drf_json_api_utils.common import DEFAULT_PAGE_SIZE, exception_handler
 from rest_framework.authentication import BaseAuthentication
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import BasePermission
@@ -22,7 +21,6 @@ from rest_framework_json_api.metadata import JSONAPIMetadata
 from rest_framework_json_api.parsers import JSONParser
 from rest_framework_json_api.renderers import JSONRenderer
 from rest_framework_json_api.views import RelationshipView, ModelViewSet
-
 from . import json_api_spec_http_methods
 from . import lookups as filter_lookups
 from . import plugins
@@ -428,11 +426,13 @@ class JsonApiModelViewBuilder:
         filter_set, filter_backend = _construct_filter_backend(self._model, self._resource_name, self._filters,
                                                                self._computed_filters)
 
+        @exception_handler
         def perform_create(view, serializer):
             instance = serializer.save()
             if self._after_create_callback is not None:
                 self._after_create_callback(view.request, instance, serializer)
 
+        @exception_handler
         def perform_destroy(view, instance):
             if self._before_delete_callback is not None:
                 self._before_delete_callback(instance, view.get_serializer())
@@ -440,17 +440,20 @@ class JsonApiModelViewBuilder:
             if self._after_delete_callback is not None:
                 self._after_delete_callback(instance, view.get_serializer())
 
+        @exception_handler
         def perform_get(view, instance, *args, **kwargs):
             response = super(view.__class__, view).retrieve(instance, *args, **kwargs)
             if self._after_get_callback is not None:
                 response.data = self._after_get_callback(response.data)
             return response
 
+        @exception_handler
         def perform_update(view, serializer):
             instance = serializer.save()
             if self._after_update_callback is not None:
                 self._after_update_callback(view.request, instance, serializer)
 
+        @exception_handler
         def perform_list(view, request, *args, **kwargs):
             queryset = view.filter_queryset(view.get_queryset())
 
@@ -645,7 +648,7 @@ class JsonApiResourceViewBuilder:
         self._before_raw_response = None
         self._always_include = always_include
         self._is_admin = is_admin \
-            or (len(self._permission_classes) > 0 and any(getattr(pc, 'admin', False) for pc in self._permission_classes))
+                         or (len(self._permission_classes) > 0 and any(getattr(pc, 'admin', False) for pc in self._permission_classes))
         self._page_size = page_size
         self._only_callbacks = only_callbacks
         self.settings = JsonApiGlobalSettings()
@@ -709,6 +712,7 @@ class JsonApiResourceViewBuilder:
         if urls_suffix is None:
             urls_suffix = ''
 
+        @exception_handler
         def destroy(view, request, *args, **kwargs):
             identifier = kwargs.get(self._unique_identifier, None)
 
@@ -716,6 +720,7 @@ class JsonApiResourceViewBuilder:
                 status = self._on_delete_callback(request, identifier, *args, **kwargs)
                 return Response(data={}, status=status)
 
+        @exception_handler
         def update(view, request, *args, **kwargs):
             data = json.loads(request.body).get('data', {})
             identifier = kwargs.get(self._unique_identifier, None)
@@ -727,6 +732,7 @@ class JsonApiResourceViewBuilder:
                                     status=status)
                 return Response(data={"data": data}, status=status)
 
+        @exception_handler
         def create(view, request, *args, **kwargs):
             data = json.loads(request.body).get('data', {}) \
                 if 'multipart' not in request.content_type else request.body
@@ -737,6 +743,7 @@ class JsonApiResourceViewBuilder:
                                     status=status)
                 return Response(data={"data": data}, status=status)
 
+        @exception_handler
         def _list(view, request, *args, **kwargs):
             params = request.query_params
             filters = []
@@ -778,6 +785,7 @@ class JsonApiResourceViewBuilder:
                     }
                 }, status=status)
 
+        @exception_handler
         def get(view, request, *args, **kwargs):
             identifier = kwargs.get(self._unique_identifier, None)
 
