@@ -444,7 +444,7 @@ class JsonApiModelViewBuilder:
         def perform_get(view, instance, *args, **kwargs):
             response = super(view.__class__, view).retrieve(instance, *args, **kwargs)
             if self._after_get_callback is not None:
-                response.data = self._after_get_callback(response.data)
+                response.data = self._after_get_callback(view.request, response.data)
             return response
 
         @exception_handler

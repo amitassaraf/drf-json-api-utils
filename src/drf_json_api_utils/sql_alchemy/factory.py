@@ -290,7 +290,7 @@ class AlchemyJsonApiViewBuilder:
                     #  Fetch all the related items to be included in the result
                     to_include = target_model.objects.query().filter(primary_join,
                                                                      getattr(self._model, primary_key).in_(
-                                                                         [getattr(item, local_column.name) for item in
+                                                                         [getattr(item, primary_key) for item in
                                                                           objects]
                                                                      )).all()
                     relevant_relation = next(
