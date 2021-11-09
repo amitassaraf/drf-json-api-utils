@@ -6,6 +6,7 @@ from copy import deepcopy
 from functools import partial
 from types import FunctionType
 from typing import Type, Tuple, Sequence, Dict, Callable, Any, Optional, List
+
 from django.apps import apps
 from django.conf.urls import url
 from django.db.models import QuerySet, Model
@@ -21,6 +22,7 @@ from rest_framework_json_api.metadata import JSONAPIMetadata
 from rest_framework_json_api.parsers import JSONParser
 from rest_framework_json_api.renderers import JSONRenderer
 from rest_framework_json_api.views import RelationshipView, ModelViewSet
+
 from . import json_api_spec_http_methods
 from . import lookups as filter_lookups
 from . import plugins
@@ -483,9 +485,10 @@ class JsonApiModelViewBuilder:
                     return str.encode(response)
                 return response
 
-        custom_paginator = type(f'PaginatorOf{self._page_size or DEFAULT_PAGE_SIZE}Pages', (LimitedJsonApiPageNumberPagination,), {
-            'page_size': self._page_size or DEFAULT_PAGE_SIZE
-        })
+        custom_paginator = type(f'PaginatorOf{self._page_size or DEFAULT_PAGE_SIZE}Pages',
+                                (LimitedJsonApiPageNumberPagination,), {
+                                    'page_size': self._page_size or DEFAULT_PAGE_SIZE
+                                })
 
         base_model_view_set = type(f'{self._resource_name}JSONApiModelViewSet{self._api_version}', (ModelViewSet,), {
             'renderer_classes': (Renderer,),
@@ -648,7 +651,8 @@ class JsonApiResourceViewBuilder:
         self._before_raw_response = None
         self._always_include = always_include
         self._is_admin = is_admin \
-                         or (len(self._permission_classes) > 0 and any(getattr(pc, 'admin', False) for pc in self._permission_classes))
+                         or (len(self._permission_classes) > 0 and any(
+            getattr(pc, 'admin', False) for pc in self._permission_classes))
         self._page_size = page_size
         self._only_callbacks = only_callbacks
         self.settings = JsonApiGlobalSettings()
@@ -812,9 +816,10 @@ class JsonApiResourceViewBuilder:
                     return str.encode(response)
                 return response
 
-        custom_paginator = type(f'PaginatorOf{self._page_size or DEFAULT_PAGE_SIZE}Pages', (LimitedJsonApiPageNumberPagination,), {
-            'page_size': self._page_size or DEFAULT_PAGE_SIZE
-        })
+        custom_paginator = type(f'PaginatorOf{self._page_size or DEFAULT_PAGE_SIZE}Pages',
+                                (LimitedJsonApiPageNumberPagination,), {
+                                    'page_size': self._page_size or DEFAULT_PAGE_SIZE
+                                })
 
         patch_view_set = None
         if any([self._on_update_callback, self._on_delete_callback, self._on_get_callback]) or not self._only_callbacks:
@@ -933,6 +938,42 @@ def json_api_view(resource_name: str,
             return builder.on_update(update_callback=func)
         else:
             raise Exception(f'Does not support method {method}')
+
+    return decorator
+
+
+def json_api_view_multi_endpoint(resource_name: str,
+                                 api_version: Optional[str] = '',
+                                 allowed_methods: Optional[List[str]] = json_api_spec_http_methods.HTTP_ACTIONS,
+                                 permission_classes: Optional[Sequence[Type[BasePermission]]] = None,
+                                 authentication_classes: Optional[Sequence[Type[BaseAuthentication]]] = None,
+                                 raw_items: Optional[bool] = False,
+                                 page_size: Optional[int] = 50,
+                                 is_admin: Optional[bool] = False,
+                                 always_include: Optional[bool] = False,
+                                 *args, **kwargs) -> FunctionType:
+    def decorator(func: Callable[[], [Callable, Callable, Callable, Callable, Callable]]):
+        on_list, on_get, on_create, on_delete, on_update = func()
+        builder = JsonApiResourceViewBuilder(action_name=resource_name,
+                                             api_version=api_version,
+                                             allowed_methods=allowed_methods,
+                                             permission_classes=permission_classes,
+                                             authentication_classes=authentication_classes,
+                                             raw_items=raw_items,
+                                             page_size=page_size,
+                                             only_callbacks=True,
+                                             is_admin=is_admin,
+                                             always_include=always_include)
+        if json_api_spec_http_methods.HTTP_GET in allowed_methods and on_list:
+            builder = builder.on_list(list_callback=on_list)
+        if json_api_spec_http_methods.HTTP_GET in allowed_methods and on_get:
+            builder = builder.on_get(get_callback=on_get)
+        if json_api_spec_http_methods.HTTP_POST in allowed_methods and on_create:
+            builder = builder.on_create(create_callback=on_create)
+        if json_api_spec_http_methods.HTTP_DELETE in allowed_methods and on_delete:
+            builder = builder.on_delete(delete_callback=on_delete)
+        if json_api_spec_http_methods.HTTP_PATCH in allowed_methods and on_update:
+            builder = builder.on_update(update_callback=on_update)
 
     return decorator
 
