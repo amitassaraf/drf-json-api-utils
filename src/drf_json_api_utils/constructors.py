@@ -25,6 +25,22 @@ from .namespace import _RESOURCE_NAME_TO_SPICE, _MODEL_TO_SERIALIZERS
 from .types import CustomField, Relation, Filter, GenericRelation, ComputedFilter
 
 
+# Create a liar list that when we query it's length we get the real amount of items in the db but
+# when displaying it, limit to the related_limit provided.
+class LiarList(list):
+
+    @property
+    def real_count(self):
+        return self._real_count
+
+    @real_count.setter
+    def real_count(self, count):
+        self._real_count = count
+
+    def __len__(self):
+        return self.real_count
+
+
 def _construct_serializer(serializer_prefix: str, serializer_suffix: str,
                           model: Type[Model], resource_name: str, fields: Sequence[str],
                           custom_fields: Sequence[CustomField], relations: Sequence[Relation],
@@ -48,13 +64,9 @@ def _construct_serializer(serializer_prefix: str, serializer_suffix: str,
             for value in iterable[:related_limit]
         ]
 
-        # Create a liar list that when we query it's length we get the real amount of items in the db but
-        # when displaying it, limit to the related_limit provided.
-        class LiarList(list):
-            def __len__(self):
-                return real_count
-
-        return LiarList(data)
+        liar = LiarList(data)
+        liar.real_count = real_count
+        return liar
 
     def generate_relation_field(relation):
         def filter_relationship(self, instance, relationship):
@@ -84,9 +96,10 @@ def _construct_serializer(serializer_prefix: str, serializer_suffix: str,
                     list_kwargs[key] = kwargs[key]
             return many_related(**list_kwargs)
 
-        resource_related_field = type(f'{"Admin" if is_admin else ""}{resource_name}ManyRelatedField', (ResourceRelatedField,), {
-            'many_init': many_init
-        })
+        resource_related_field = type(f'{"Admin" if is_admin else ""}{resource_name}ManyRelatedField',
+                                      (ResourceRelatedField,), {
+                                          'many_init': many_init
+                                      })
 
         return resource_related_field
 
@@ -271,10 +284,13 @@ def _construct_serializer(serializer_prefix: str, serializer_suffix: str,
     _MODEL_TO_SERIALIZERS[model].append(new_serializer)
     return new_serializer
 
+
 def construct_new_filters(computed_filter):
-        def _generate_new_filters(self, queryset, field_name, value):
-            return computed_filter.filter_func(queryset, value)
-        return _generate_new_filters
+    def _generate_new_filters(self, queryset, field_name, value):
+        return computed_filter.filter_func(queryset, value)
+
+    return _generate_new_filters
+
 
 def _construct_filter_backend(model: Type[Model], resource_name: str, filters: Dict[str, Filter],
                               computed_filters: Dict[str, ComputedFilter]) -> Tuple[Type, Type]:

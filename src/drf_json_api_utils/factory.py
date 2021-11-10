@@ -10,7 +10,8 @@ from typing import Type, Tuple, Sequence, Dict, Callable, Any, Optional, List
 from django.apps import apps
 from django.conf.urls import url
 from django.db.models import QuerySet, Model
-from drf_json_api_utils.common import DEFAULT_PAGE_SIZE, exception_handler
+from django.utils.decorators import method_decorator
+from django.views.decorators.cache import cache_page
 from rest_framework.authentication import BaseAuthentication
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import BasePermission
@@ -23,6 +24,7 @@ from rest_framework_json_api.parsers import JSONParser
 from rest_framework_json_api.renderers import JSONRenderer
 from rest_framework_json_api.views import RelationshipView, ModelViewSet
 
+from drf_json_api_utils.common import DEFAULT_PAGE_SIZE, exception_handler
 from . import json_api_spec_http_methods
 from . import lookups as filter_lookups
 from . import plugins
@@ -73,6 +75,9 @@ def get_dict_by_methods(view_type, allowed_http_methods):
     return out
 
 
+DEFAULT_VOID_DECORATOR = lambda func: func
+
+
 class JsonApiModelViewBuilder:
     DEFAULT_RELATED_LIMIT = 100
 
@@ -90,13 +95,18 @@ class JsonApiModelViewBuilder:
         '_authentication_classes': {'kwarg': 'authentication_classes', 'default': []},
         '_before_create_callback': {'kwarg': None, 'default': None},
         '_after_create_callback': {'kwarg': None, 'default': None},
+        '_create_decorator': {'kwarg': None, 'default': DEFAULT_VOID_DECORATOR},
         '_after_get_callback': {'kwarg': None, 'default': None},
+        '_get_decorator': {'kwarg': None, 'default': DEFAULT_VOID_DECORATOR},
         '_before_update_callback': {'kwarg': None, 'default': None},
         '_after_update_callback': {'kwarg': None, 'default': None},
+        '_update_decorator': {'kwarg': None, 'default': DEFAULT_VOID_DECORATOR},
         '_before_delete_callback': {'kwarg': None, 'default': None},
         '_after_delete_callback': {'kwarg': None, 'default': None},
+        '_delete_decorator': {'kwarg': None, 'default': DEFAULT_VOID_DECORATOR},
         '_before_list_callback': {'kwarg': None, 'default': None},
         '_after_list_callback': {'kwarg': None, 'default': None},
+        '_list_decorator': {'kwarg': None, 'default': DEFAULT_VOID_DECORATOR},
         '_before_raw_response': {'kwarg': None, 'default': None},
         '_expose_related_views': {'kwarg': 'expose_related_views', 'default': None},
         '_is_admin': {'kwarg': 'is_admin', 'default': None},
@@ -314,8 +324,19 @@ class JsonApiModelViewBuilder:
         self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_POST)
         return self
 
+    def set_create_decorator(self,
+                             create_decorator: Callable[[Callable], Callable] = None) -> 'JsonApiModelViewBuilder':
+        self._create_decorator = create_decorator
+        self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_GET)
+        return self
+
     def after_get(self, after_get_callback: Callable[[Any], Any] = None) -> 'JsonApiModelViewBuilder':
         self._after_get_callback = after_get_callback
+        self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_GET)
+        return self
+
+    def set_get_decorator(self, get_decorator: Callable[[Callable], Callable] = None) -> 'JsonApiModelViewBuilder':
+        self._get_decorator = get_decorator
         self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_GET)
         return self
 
@@ -329,6 +350,12 @@ class JsonApiModelViewBuilder:
         self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_PATCH)
         return self
 
+    def set_update_decorator(self,
+                             update_decorator: Callable[[Callable], Callable] = None) -> 'JsonApiModelViewBuilder':
+        self._update_decorator = update_decorator
+        self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_GET)
+        return self
+
     def before_delete(self, before_delete_callback: Callable[[Any], Any] = None) -> 'JsonApiModelViewBuilder':
         self._before_delete_callback = before_delete_callback
         self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_DELETE)
@@ -339,6 +366,12 @@ class JsonApiModelViewBuilder:
         self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_DELETE)
         return self
 
+    def set_delete_decorator(self,
+                             delete_decorator: Callable[[Callable], Callable] = None) -> 'JsonApiModelViewBuilder':
+        self._delete_decorator = delete_decorator
+        self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_GET)
+        return self
+
     def before_list(self,
                     before_list_callback: Callable[[Request, QuerySet], QuerySet] = None) -> 'JsonApiModelViewBuilder':
         self._before_list_callback = before_list_callback
@@ -347,6 +380,11 @@ class JsonApiModelViewBuilder:
 
     def after_list(self, after_list_callback: Callable[[Any], Any] = None) -> 'JsonApiModelViewBuilder':
         self._after_list_callback = after_list_callback
+        self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_GET)
+        return self
+
+    def set_list_decorator(self, list_decorator: Callable[[Callable], Callable] = None) -> 'JsonApiModelViewBuilder':
+        self._list_decorator = list_decorator
         self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_GET)
         return self
 
@@ -429,12 +467,14 @@ class JsonApiModelViewBuilder:
                                                                self._computed_filters)
 
         @exception_handler
+        @self._create_decorator
         def perform_create(view, serializer):
             instance = serializer.save()
             if self._after_create_callback is not None:
                 self._after_create_callback(view.request, instance, serializer)
 
         @exception_handler
+        @self._delete_decorator
         def perform_destroy(view, instance):
             if self._before_delete_callback is not None:
                 self._before_delete_callback(instance, view.get_serializer())
@@ -442,20 +482,28 @@ class JsonApiModelViewBuilder:
             if self._after_delete_callback is not None:
                 self._after_delete_callback(instance, view.get_serializer())
 
+        def _retrieve(view, instance):
+            instance = view.get_object()
+            serializer = view.get_serializer(instance)
+            return Response(serializer.data)
+
         @exception_handler
+        @self._get_decorator
         def perform_get(view, instance, *args, **kwargs):
-            response = super(view.__class__, view).retrieve(instance, *args, **kwargs)
+            response = _retrieve(view, instance)
             if self._after_get_callback is not None:
                 response.data = self._after_get_callback(view.request, response.data)
             return response
 
         @exception_handler
+        @self._update_decorator
         def perform_update(view, serializer):
             instance = serializer.save()
             if self._after_update_callback is not None:
                 self._after_update_callback(view.request, instance, serializer)
 
         @exception_handler
+        @self._list_decorator
         def perform_list(view, request, *args, **kwargs):
             queryset = view.filter_queryset(view.get_queryset())
 
@@ -463,15 +511,18 @@ class JsonApiModelViewBuilder:
                 queryset = self._before_list_callback(request, queryset)
 
             page = view.paginate_queryset(queryset)
-            if page is not None:
-                serializer = view.get_serializer(page, many=True)
-                response = view.get_paginated_response(serializer.data)
-            else:
-                serializer = view.get_serializer(queryset, many=True)
-                response = Response(serializer.data)
+
+            serializer = view.get_serializer(page if page is not None else queryset, many=True)
+            data = serializer.data
 
             if self._after_list_callback is not None:
-                response.data = self._after_list_callback(request, response.data)
+                data = self._after_list_callback(view.request, data)
+
+            if page is not None:
+                response = view.get_paginated_response(data)
+            else:
+                response = Response(data)
+
             return response
 
         class Renderer(JSONRenderer):
@@ -634,6 +685,11 @@ class JsonApiResourceViewBuilder:
                  is_admin: Optional[bool] = False,
                  always_include: Optional[bool] = False,
                  only_callbacks: Optional[bool] = False,
+                 create_decorator: Optional[Callable[[Callable], Callable]] = DEFAULT_VOID_DECORATOR,
+                 update_decorator: Optional[Callable[[Callable], Callable]] = DEFAULT_VOID_DECORATOR,
+                 get_decorator: Optional[Callable[[Callable], Callable]] = DEFAULT_VOID_DECORATOR,
+                 list_decorator: Optional[Callable[[Callable], Callable]] = DEFAULT_VOID_DECORATOR,
+                 delete_decorator: Optional[Callable[[Callable], Callable]] = DEFAULT_VOID_DECORATOR,
                  page_size: int = DEFAULT_PAGE_SIZE):
         self._allowed_methods = [*allowed_methods]
         self._resource_name = action_name
@@ -649,6 +705,11 @@ class JsonApiResourceViewBuilder:
         self._on_list_callback = None
         self._on_get_callback = None
         self._before_raw_response = None
+        self._create_decorator = create_decorator
+        self._update_decorator = update_decorator
+        self._get_decorator = get_decorator
+        self._list_decorator = list_decorator
+        self._delete_decorator = delete_decorator
         self._always_include = always_include
         self._is_admin = is_admin \
                          or (len(self._permission_classes) > 0 and any(
@@ -673,28 +734,28 @@ class JsonApiResourceViewBuilder:
 
     def on_create(self,
                   create_callback: Callable[[Request], Tuple[Dict, str, int]] = None) -> 'JsonApiResourceViewBuilder':
-        self._on_create_callback = create_callback
+        self._on_create_callback = self._create_decorator(create_callback)
         self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_POST)
         return self
 
     def on_update(self, update_callback: Callable[[Request], Tuple[Dict, int]] = None) -> 'JsonApiResourceViewBuilder':
-        self._on_update_callback = update_callback
+        self._on_update_callback = self._update_decorator(update_callback)
         self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_PATCH)
         return self
 
     def on_delete(self, delete_callback: Callable[[Request], Tuple[int]] = None) -> 'JsonApiResourceViewBuilder':
-        self._on_delete_callback = delete_callback
+        self._on_delete_callback = self._delete_decorator(delete_callback)
         self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_DELETE)
         return self
 
     def on_list(self,
                 list_callback: Callable[[Request], Tuple[List, List, int, int]] = None) -> 'JsonApiResourceViewBuilder':
-        self._on_list_callback = list_callback
+        self._on_list_callback = self._list_decorator(list_callback)
         self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_GET)
         return self
 
     def on_get(self, get_callback: Callable[[Request], Tuple[Dict, List, int]] = None) -> 'JsonApiResourceViewBuilder':
-        self._on_get_callback = get_callback
+        self._on_get_callback = self._get_decorator(get_callback)
         self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_GET)
         return self
 
