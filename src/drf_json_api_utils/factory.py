@@ -133,7 +133,8 @@ class JsonApiModelViewBuilder:
                  plugin_options: Optional[Dict[str, Any]] = None,
                  expose_related_views: Optional[bool] = False,
                  is_admin: Optional[bool] = False,
-                 always_include: Optional[bool] = False):
+                 always_include: Optional[bool] = False,
+                 page_size: Optional[int] = DEFAULT_PAGE_SIZE):
         self.override(
             model=model,
             primary_key_name=primary_key_name,
@@ -149,6 +150,7 @@ class JsonApiModelViewBuilder:
             expose_related_views=expose_related_views,
             is_admin=is_admin,
             always_include=always_include,
+            page_size=page_size
         )
         self.settings = JsonApiGlobalSettings()
 
@@ -972,7 +974,7 @@ def json_api_view(resource_name: str,
                   authentication_classes: Optional[Sequence[Type[BaseAuthentication]]] = None,
                   multiple_resource: Optional[bool] = True,
                   raw_items: Optional[bool] = False,
-                  page_size: Optional[int] = 50,
+                  page_size: Optional[int] = DEFAULT_PAGE_SIZE,
                   is_admin: Optional[bool] = False,
                   always_include: Optional[bool] = False,
                   *args, **kwargs) -> FunctionType:
