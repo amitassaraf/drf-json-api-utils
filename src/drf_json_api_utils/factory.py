@@ -515,15 +515,13 @@ class JsonApiModelViewBuilder:
             page = view.paginate_queryset(queryset)
 
             serializer = view.get_serializer(page if page is not None else queryset, many=True)
-            data = serializer.data
+            if page is not None:
+                response = view.get_paginated_response(serializer.data)
+            else:
+                response = Response(serializer.data)
 
             if self._after_list_callback is not None:
-                data = self._after_list_callback(view.request, data)
-
-            if page is not None:
-                response = view.get_paginated_response(data)
-            else:
-                response = Response(data)
+                response.data = self._after_list_callback(view.request, response.data)
 
             return response
 
