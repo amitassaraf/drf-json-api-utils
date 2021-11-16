@@ -21,7 +21,7 @@ from rest_framework_json_api.utils import get_resource_type_from_serializer, get
     get_resource_type_from_queryset
 
 from .generic_relation import GenericRelatedField
-from .namespace import _RESOURCE_NAME_TO_SPICE, _MODEL_TO_SERIALIZERS
+from .namespace import _RESOURCE_NAME_TO_SPICE, _MODEL_TO_SERIALIZERS, _append_to_namespace
 from .types import CustomField, Relation, Filter, GenericRelation, ComputedFilter
 
 
@@ -46,7 +46,7 @@ def _construct_serializer(serializer_prefix: str, serializer_suffix: str,
                           custom_fields: Sequence[CustomField], relations: Sequence[Relation],
                           generic_relations: Sequence[GenericRelation], related_limit: int,
                           primary_key_name: str, on_validate: FunctionType = None,
-                          after_list_callback: Callable = None, is_admin: bool = False) -> Type:
+                          after_list_callback: Callable = None, is_admin: bool = False, dummy_includes=[]) -> Type:
     serializer_name = f'{"Admin" if is_admin else ""}{serializer_prefix}{resource_name}Serializer{serializer_suffix}'
     if model in _MODEL_TO_SERIALIZERS:
         found_serializer = list(
@@ -116,6 +116,12 @@ def _construct_serializer(serializer_prefix: str, serializer_suffix: str,
     for relation in relations:
         included_serializers[
             relation.field] = f'drf_json_api_utils.namespace.{"Admin" if is_admin else ""}{f"{serializer_prefix}{relation.resource_name}Serializer{relation.api_version}"}'
+
+    for include in dummy_includes or []:
+        dummy_serializer = type(f'{"Admin" if is_admin else ""}{f"{serializer_prefix}{include}Serializer"}',
+                                (serializers.Serializer,), {})
+        _append_to_namespace(dummy_serializer)
+        included_serializers[include] = f'drf_json_api_utils.namespace.{dummy_serializer.__name__}'
 
     for relation in generic_relations:
         for related in getattr(relation, 'related', []):

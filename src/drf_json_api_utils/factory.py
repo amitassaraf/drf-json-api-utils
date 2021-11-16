@@ -10,8 +10,6 @@ from typing import Type, Tuple, Sequence, Dict, Callable, Any, Optional, List
 from django.apps import apps
 from django.conf.urls import url
 from django.db.models import QuerySet, Model
-from django.utils.decorators import method_decorator
-from django.views.decorators.cache import cache_page
 from rest_framework.authentication import BaseAuthentication
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import BasePermission
@@ -118,6 +116,7 @@ class JsonApiModelViewBuilder:
         '_primary_key_name': {'kwarg': 'primary_key_name', 'default': 'id'},
         '_resource_name': {'kwarg': 'resource_name', 'default': None},
         '_page_size': {'kwarg': 'page_size', 'default': None},
+        '_dummy_includes': {'kwarg': 'dummy_includes', 'default': []},
     }
 
     def __init__(self, model: Type[Model],
@@ -259,6 +258,10 @@ class JsonApiModelViewBuilder:
                             field: str = None) -> 'JsonApiModelViewBuilder':
         self._computed_filters[name] = ComputedFilter(field=field or name, filter_func=filter_func,
                                                       filter_type=filter_type)
+        return self
+
+    def add_dummy_include(self, field_name):
+        self._dummy_includes.append(field_name)
         return self
 
     def add_relation(self, field: str, many: bool = False, resource_name: str = None,
@@ -454,7 +457,8 @@ class JsonApiModelViewBuilder:
                                           self._primary_key_name,
                                           self._before_update_callback if limit_to_on_retrieve else self._before_create_callback,
                                           self._after_list_callback,
-                                          self._is_admin)
+                                          self._is_admin,
+                                          self._dummy_includes)
                 _append_to_namespace(method_to_serializer[limit_to_on_retrieve])
         else:
 
@@ -531,7 +535,7 @@ class JsonApiModelViewBuilder:
                     data, accepted_media_type, renderer_context
                 )
                 if self._before_raw_response:
-                    response = self._before_raw_response(response)
+                    response = self._before_raw_response(response, renderer_context)
                 if not isinstance(response, (bytes, bytearray)):
                     return str.encode(response)
                 return response
@@ -872,7 +876,7 @@ class JsonApiResourceViewBuilder:
                     data, accepted_media_type, renderer_context
                 )
                 if self._before_raw_response:
-                    response = self._before_raw_response(response)
+                    response = self._before_raw_response(response, renderer_context)
                 if not isinstance(response, (bytes, bytearray)):
                     return str.encode(response)
                 return response
