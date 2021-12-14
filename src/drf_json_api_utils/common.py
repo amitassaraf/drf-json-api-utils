@@ -14,6 +14,8 @@ def exception_handler(func):
         try:
             return func(*args, **kwargs)
         except Exception as exc:
+            import traceback
+            traceback.print_exc()
             return Response(data={'attributes': {'message': str(exc)}},
                             status=getattr(exc, 'http_status', HTTP_500_INTERNAL_SERVER_ERROR))
     return wrapper
