@@ -1017,7 +1017,7 @@ def json_api_view_multi_endpoint(resource_name: str,
                                  is_admin: Optional[bool] = False,
                                  always_include: Optional[bool] = False,
                                  *args, **kwargs) -> FunctionType:
-    def decorator(func: Callable[[], List[Callable, Callable, Callable, Callable, Callable]]):
+    def decorator(func: Callable[[], Tuple[Callable, Callable, Callable, Callable, Callable]]):
         on_list, on_get, on_create, on_delete, on_update = func()
         builder = JsonApiResourceViewBuilder(action_name=resource_name,
                                              api_version=api_version,
