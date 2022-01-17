@@ -16,7 +16,8 @@ def exception_handler(func):
         except Exception as exc:
             import traceback
             traceback.print_exc()
-            return Response(data={'attributes': {'message': str(exc)}},
+            return Response(data={'attributes': {'message': str(exc),
+                                                 'error_type': exc.__class__.__qualname__}},
                             status=getattr(exc, 'http_status', HTTP_500_INTERNAL_SERVER_ERROR))
     return wrapper
 
