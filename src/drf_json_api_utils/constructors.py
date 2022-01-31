@@ -5,7 +5,7 @@ from types import FunctionType
 from typing import Type, Dict, Tuple, Sequence, Callable
 
 import inflection
-from django.db.models import QuerySet, Model
+from django.db.models import QuerySet, Model, ForeignKey
 from django.utils.module_loading import import_string as import_class_from_dotted_path
 from django_filters.filterset import BaseFilterSet
 from django_filters.rest_framework import FilterSet
@@ -70,6 +70,10 @@ def _construct_serializer(serializer_prefix: str, serializer_suffix: str,
 
     def generate_relation_field(relation):
         def filter_relationship(self, instance, relationship):
+            relationship_field = getattr(relationship, 'field', None)
+            if isinstance(relationship_field, ForeignKey):
+                relationship = relationship.model.objects.filter(**{relationship_field.name: instance})
+
             if relation.resource_name in _RESOURCE_NAME_TO_SPICE and not is_admin:
                 return _RESOURCE_NAME_TO_SPICE[relation.resource_name](self.context['request'], relationship)
             return relationship
