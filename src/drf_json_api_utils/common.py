@@ -8,20 +8,6 @@ from rest_framework_json_api.pagination import JsonApiPageNumberPagination
 DEFAULT_PAGE_SIZE = 50
 
 
-def exception_handler(func):
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-        try:
-            return func(*args, **kwargs)
-        except Exception as exc:
-            import traceback
-            traceback.print_exc()
-            return Response(data={'attributes': {'message': str(exc),
-                                                 'error_type': exc.__class__.__qualname__}},
-                            status=getattr(exc, 'http_status', HTTP_500_INTERNAL_SERVER_ERROR))
-    return wrapper
-
-
 class LimitedJsonApiPageNumberPagination(JsonApiPageNumberPagination):
     page_size = DEFAULT_PAGE_SIZE
 
@@ -41,6 +27,25 @@ class Singleton(type):
 
 class JsonApiGlobalSettings(metaclass=Singleton):
     pass
+
+
+def exception_handler(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except Exception as exc:
+            import traceback
+            traceback.print_exc()
+
+            settings = JsonApiGlobalSettings()
+            exception_response_handler = getattr(settings, 'exception_response_handler', None)
+            if exception_response_handler:
+                return exception_response_handler(exc)
+
+            return Response(data={'attributes': {'message': str(exc)}},
+                            status=getattr(exc, 'http_status', HTTP_500_INTERNAL_SERVER_ERROR))
+    return wrapper
 
 
 LOGGER = logging.getLogger(__name__)
