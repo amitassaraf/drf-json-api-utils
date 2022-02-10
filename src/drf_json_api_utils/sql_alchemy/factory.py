@@ -152,10 +152,6 @@ class AlchemyJsonApiViewBuilder:
                 f'You\'ve set a lifecycle callback for resource {self._resource_name}, '
                 f'which doesn\'t allow it\'s respective HTTP method through `allowed_methods`.')
 
-    def _capture_exception(self, e: Any):
-        if hasattr(self.settings, 'exception_callback'):
-            self.settings.exception_callback(e)
-
     def before_create(self, before_create_callback: Callable[[Any], Any] = None) -> 'AlchemyJsonApiViewBuilder':
         self._before_create_callback = before_create_callback
         self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_POST)
@@ -375,8 +371,8 @@ class AlchemyJsonApiViewBuilder:
                     result, rendered_includes = self._after_serialization(request, result, rendered_includes)
 
             except Exception as e:
-                self._capture_exception(e)
-                return [{'errors': [str(e)]}], [], 0, getattr(e, 'http_status', HTTP_500_INTERNAL_SERVER_ERROR)
+                # Raise to DRF handler
+                raise e
 
             return result, rendered_includes, pagination.total_results, HTTP_200_OK
 
@@ -391,8 +387,8 @@ class AlchemyJsonApiViewBuilder:
                 except OKAlreadyExists:
                     return {'status': 'OK'}, '', HTTP_201_CREATED
                 except Exception as e:
-                    self._capture_exception(e)
-                    return {'errors': [str(e)]}, '', getattr(e, 'http_status', HTTP_500_INTERNAL_SERVER_ERROR)
+                    # Raise to DRF handler
+                    raise e
 
             try:
                 unmarshal_obj = schema.load(attributes, session=schema.db.session, unknown=INCLUDE)
@@ -406,8 +402,8 @@ class AlchemyJsonApiViewBuilder:
                 try:
                     self._after_create_callback(request, attributes, obj)
                 except Exception as e:
-                    self._capture_exception(e)
-                    return {'errors': [str(e)]}, '', getattr(e, 'http_status', HTTP_500_INTERNAL_SERVER_ERROR)
+                    # Raise to DRF handler
+                    raise e
                 obj.refresh_from_db()
 
             result = schema.json_api_dump(obj, self._resource_name)
@@ -430,8 +426,8 @@ class AlchemyJsonApiViewBuilder:
                 try:
                     attributes = self._before_update_callback(request, attributes, obj)
                 except Exception as e:
-                    self._capture_exception(e)
-                    return {'errors': [str(e)]}, getattr(e, 'http_status', HTTP_500_INTERNAL_SERVER_ERROR)
+                    # Raise to DRF handler
+                    raise e
                 obj.refresh_from_db()
 
             for field in self._fields:
@@ -443,8 +439,8 @@ class AlchemyJsonApiViewBuilder:
                 try:
                     self._after_update_callback(request, obj)
                 except Exception as e:
-                    self._capture_exception(e)
-                    return {'errors': [str(e)]}, getattr(e, 'http_status', HTTP_500_INTERNAL_SERVER_ERROR)
+                    # Raise to DRF handler
+                    raise e
                 obj.refresh_from_db()
 
             result = schema.json_api_dump(obj, self._resource_name)
@@ -458,8 +454,8 @@ class AlchemyJsonApiViewBuilder:
                 try:
                     obj = self._before_delete_callback(request, obj)
                 except Exception as e:
-                    self._capture_exception(e)
-                    return getattr(e, 'http_status', HTTP_500_INTERNAL_SERVER_ERROR)
+                    # Raise to DRF handler
+                    raise e
             if obj:
                 obj.delete()
 
@@ -467,8 +463,8 @@ class AlchemyJsonApiViewBuilder:
                     try:
                         self._after_delete_callback(request, obj)
                     except Exception as e:
-                        self._capture_exception(e)
-                        return getattr(e, 'http_status', HTTP_500_INTERNAL_SERVER_ERROR)
+                        # Raise to DRF handler
+                        raise e
             return HTTP_204_NO_CONTENT
 
         builder = JsonApiResourceViewBuilder(action_name=self._resource_name,
