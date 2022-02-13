@@ -7,6 +7,7 @@ from functools import partial
 from types import FunctionType
 from typing import Type, Tuple, Sequence, Dict, Callable, Any, Optional, List
 
+import ujson
 from django.apps import apps
 from django.conf.urls import url
 from django.db.models import QuerySet, Model
@@ -534,6 +535,16 @@ class JsonApiModelViewBuilder:
                 response = super(Renderer, inner_self).render(
                     data, accepted_media_type, renderer_context
                 )
+
+                try:
+                    res = ujson.loads(response)
+                    if res.get('data', {}).get('included'):
+                        res['included'] = res['data']['included']
+                        del res['data']['included']
+                    response = ujson.dumps(res)
+                except Exception as exc:
+                    pass
+
                 if self._before_raw_response:
                     response = self._before_raw_response(response, renderer_context)
                 if not isinstance(response, (bytes, bytearray)):
@@ -875,6 +886,16 @@ class JsonApiResourceViewBuilder:
                 response = super(Renderer, inner_self).render(
                     data, accepted_media_type, renderer_context
                 )
+
+                try:
+                    res = ujson.loads(response)
+                    if res.get('data', {}).get('included'):
+                        res['included'] = res['data']['included']
+                        del res['data']['included']
+                    response = ujson.dumps(res)
+                except Exception as exc:
+                    pass
+
                 if self._before_raw_response:
                     response = self._before_raw_response(response, renderer_context)
                 if not isinstance(response, (bytes, bytearray)):
