@@ -540,7 +540,7 @@ class JsonApiModelViewBuilder:
                     res = ujson.loads(response)
                     if res.get('data', {}).get('included'):
                         res['included'] = res['data']['included']
-                        del res['data']['included']
+                        # del res['data']['included']
                     response = ujson.dumps(res)
                 except Exception as exc:
                     pass
@@ -891,7 +891,7 @@ class JsonApiResourceViewBuilder:
                     res = ujson.loads(response)
                     if res.get('data', {}).get('included'):
                         res['included'] = res['data']['included']
-                        del res['data']['included']
+                        # del res['data']['included']
                     response = ujson.dumps(res)
                 except Exception as exc:
                     pass
