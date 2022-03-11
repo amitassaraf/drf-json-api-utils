@@ -1000,6 +1000,11 @@ def json_api_view(resource_name: str,
                   page_size: Optional[int] = DEFAULT_PAGE_SIZE,
                   is_admin: Optional[bool] = False,
                   always_include: Optional[bool] = False,
+                  create_decorator: Optional[Callable[[Callable], Callable]] = DEFAULT_VOID_DECORATOR,
+                  update_decorator: Optional[Callable[[Callable], Callable]] = DEFAULT_VOID_DECORATOR,
+                  get_decorator: Optional[Callable[[Callable], Callable]] = DEFAULT_VOID_DECORATOR,
+                  list_decorator: Optional[Callable[[Callable], Callable]] = DEFAULT_VOID_DECORATOR,
+                  delete_decorator: Optional[Callable[[Callable], Callable]] = DEFAULT_VOID_DECORATOR,
                   *args, **kwargs) -> FunctionType:
     def decorator(func: Callable[[Request], Tuple[Dict, int]]):
         builder = JsonApiResourceViewBuilder(action_name=resource_name,
@@ -1011,7 +1016,12 @@ def json_api_view(resource_name: str,
                                              page_size=page_size,
                                              only_callbacks=True,
                                              is_admin=is_admin,
-                                             always_include=always_include)
+                                             always_include=always_include,
+                                             get_decorator=get_decorator,
+                                             update_decorator=update_decorator,
+                                             create_decorator=create_decorator,
+                                             list_decorator=list_decorator,
+                                             delete_decorator=delete_decorator)
         if method == json_api_spec_http_methods.HTTP_GET and multiple_resource:
             return builder.on_list(list_callback=func)
         elif method == json_api_spec_http_methods.HTTP_GET:
@@ -1037,6 +1047,11 @@ def json_api_view_multi_endpoint(resource_name: str,
                                  page_size: Optional[int] = 50,
                                  is_admin: Optional[bool] = False,
                                  always_include: Optional[bool] = False,
+                                 create_decorator: Optional[Callable[[Callable], Callable]] = DEFAULT_VOID_DECORATOR,
+                                 update_decorator: Optional[Callable[[Callable], Callable]] = DEFAULT_VOID_DECORATOR,
+                                 get_decorator: Optional[Callable[[Callable], Callable]] = DEFAULT_VOID_DECORATOR,
+                                 list_decorator: Optional[Callable[[Callable], Callable]] = DEFAULT_VOID_DECORATOR,
+                                 delete_decorator: Optional[Callable[[Callable], Callable]] = DEFAULT_VOID_DECORATOR,
                                  *args, **kwargs) -> FunctionType:
     def decorator(func: Callable[[], Tuple[Callable, Callable, Callable, Callable, Callable]]):
         on_list, on_get, on_create, on_delete, on_update = func()
@@ -1049,7 +1064,12 @@ def json_api_view_multi_endpoint(resource_name: str,
                                              page_size=page_size,
                                              only_callbacks=True,
                                              is_admin=is_admin,
-                                             always_include=always_include)
+                                             always_include=always_include,
+                                             get_decorator=get_decorator,
+                                             update_decorator=update_decorator,
+                                             create_decorator=create_decorator,
+                                             list_decorator=list_decorator,
+                                             delete_decorator=delete_decorator)
         if json_api_spec_http_methods.HTTP_GET in allowed_methods and on_list:
             builder = builder.on_list(list_callback=on_list)
         if json_api_spec_http_methods.HTTP_GET in allowed_methods and on_get:
