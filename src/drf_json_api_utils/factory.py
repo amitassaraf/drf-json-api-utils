@@ -874,7 +874,7 @@ class JsonApiResourceViewBuilder:
                 include = params.get('include', '')
                 includes = include.split(',') if include else []
 
-                data, included, status = self._on_get_callback(request, identifier, includes, *args, **kwargs)
+                data, included, status = self._on_get_callback(identifier, request, includes, *args, **kwargs)
                 if self._raw_items:
                     return Response(data={'id': identifier, 'type': self._resource_name, 'attributes': data},
                                     status=status)
