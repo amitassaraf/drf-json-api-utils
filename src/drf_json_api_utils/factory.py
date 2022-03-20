@@ -749,28 +749,28 @@ class JsonApiResourceViewBuilder:
 
     def on_create(self,
                   create_callback: Callable[[Request], Tuple[Dict, str, int]] = None) -> 'JsonApiResourceViewBuilder':
-        self._on_create_callback = self._create_decorator(create_callback)
+        self._on_create_callback = create_callback
         self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_POST)
         return self
 
     def on_update(self, update_callback: Callable[[Request], Tuple[Dict, int]] = None) -> 'JsonApiResourceViewBuilder':
-        self._on_update_callback = self._update_decorator(update_callback)
+        self._on_update_callback = update_callback
         self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_PATCH)
         return self
 
     def on_delete(self, delete_callback: Callable[[Request], Tuple[int]] = None) -> 'JsonApiResourceViewBuilder':
-        self._on_delete_callback = self._delete_decorator(delete_callback)
+        self._on_delete_callback = delete_callback
         self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_DELETE)
         return self
 
     def on_list(self,
                 list_callback: Callable[[Request], Tuple[List, List, int, int]] = None) -> 'JsonApiResourceViewBuilder':
-        self._on_list_callback = self._list_decorator(list_callback)
+        self._on_list_callback = list_callback
         self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_GET)
         return self
 
     def on_get(self, get_callback: Callable[[Request], Tuple[Dict, List, int]] = None) -> 'JsonApiResourceViewBuilder':
-        self._on_get_callback = self._get_decorator(get_callback)
+        self._on_get_callback = get_callback
         self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_GET)
         return self
 
@@ -793,6 +793,7 @@ class JsonApiResourceViewBuilder:
             urls_suffix = ''
 
         @exception_handler
+        @self._delete_decorator
         def destroy(view, request, *args, **kwargs):
             identifier = kwargs.get(self._unique_identifier, None)
 
@@ -813,6 +814,7 @@ class JsonApiResourceViewBuilder:
                 return Response(data={"data": data}, status=status)
 
         @exception_handler
+        @self._create_decorator
         def create(view, request, *args, **kwargs):
             data = json.loads(request.body).get('data', {}) \
                 if 'multipart' not in request.content_type else request.body
@@ -824,6 +826,7 @@ class JsonApiResourceViewBuilder:
                 return Response(data={"data": data}, status=status)
 
         @exception_handler
+        @self._list_decorator
         def _list(view, request, *args, **kwargs):
             params = request.query_params
             filters = []
@@ -866,6 +869,7 @@ class JsonApiResourceViewBuilder:
                 }, status=status)
 
         @exception_handler
+        @self._get_decorator
         def get(view, request, *args, **kwargs):
             identifier = kwargs.get(self._unique_identifier, None)
 
