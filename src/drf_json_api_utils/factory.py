@@ -802,6 +802,7 @@ class JsonApiResourceViewBuilder:
                 return Response(data={}, status=status)
 
         @exception_handler
+        @self._update_decorator
         def update(view, request, *args, **kwargs):
             data = json.loads(request.body).get('data', {})
             identifier = kwargs.get(self._unique_identifier, None)

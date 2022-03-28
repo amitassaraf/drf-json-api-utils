@@ -262,7 +262,7 @@ class AlchemyJsonApiViewBuilder:
         def default_permitted_objects(request, query):
             return query
 
-        def render_includes(includes, objects):
+        def render_includes(includes, objects, request):
 
             #
             #  Go over all the keys that the user wants to include, and serialize them
@@ -296,6 +296,7 @@ class AlchemyJsonApiViewBuilder:
                                          _TYPE_TO_SCHEMA[target_model]))[0]
                     target_many = schema['serializer'](many=True)
                     #  Serialize all the included objects to JSON:API
+                    target_many.context = {'request': request}
                     include_result = target_many.json_api_dump(to_include, schema['resource_name'],
                                                                with_data=False)
                     rendered_includes.extend(include_result)
@@ -321,7 +322,8 @@ class AlchemyJsonApiViewBuilder:
             if self._after_get_callback:
                 obj = self._after_get_callback(request, obj)
 
-            rendered_includes = render_includes(includes, [obj])
+            rendered_includes = render_includes(includes, [obj], request)
+            schema.context = {'request': request}
             result = schema.json_api_dump(obj, self._resource_name)
 
             if self._before_get_response:
@@ -359,12 +361,13 @@ class AlchemyJsonApiViewBuilder:
 
             #  Fetch the values from DB
             objects = query.all()
-            rendered_includes = render_includes(includes, objects)
+            rendered_includes = render_includes(includes, objects, request)
 
             try:
                 if self._after_list_callback:
                     objects = self._after_list_callback(request, objects)
 
+                schema.context = {'request': request}
                 result = schema_many.json_api_dump(objects, self._resource_name)
 
                 if self._after_serialization:
@@ -391,6 +394,7 @@ class AlchemyJsonApiViewBuilder:
                     raise e
 
             try:
+                schema.context = {'request': request}
                 unmarshal_obj = schema.load(attributes, session=schema.db.session, unknown=INCLUDE)
             except ValidationError as err:
                 return err.messages, '', HTTP_400_BAD_REQUEST
@@ -406,6 +410,7 @@ class AlchemyJsonApiViewBuilder:
                     raise e
                 obj.refresh_from_db()
 
+            schema.context = {'request': request}
             result = schema.json_api_dump(obj, self._resource_name)
             return result, obj.id, HTTP_201_CREATED
 
@@ -443,6 +448,7 @@ class AlchemyJsonApiViewBuilder:
                     raise e
                 obj.refresh_from_db()
 
+            schema.context = {'request': request}
             result = schema.json_api_dump(obj, self._resource_name)
             return result, HTTP_200_OK
 
