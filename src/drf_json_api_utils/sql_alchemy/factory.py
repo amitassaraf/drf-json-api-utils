@@ -367,7 +367,7 @@ class AlchemyJsonApiViewBuilder:
                 if self._after_list_callback:
                     objects = self._after_list_callback(request, objects)
 
-                schema.context = {'request': request}
+                schema_many.context = {'request': request}
                 result = schema_many.json_api_dump(objects, self._resource_name)
 
                 if self._after_serialization:
