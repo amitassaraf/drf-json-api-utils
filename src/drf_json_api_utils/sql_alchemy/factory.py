@@ -437,7 +437,18 @@ class AlchemyJsonApiViewBuilder:
 
             for field in self._fields:
                 if field != identifier and field in attributes:
-                    setattr(obj, field, attributes[field])
+                    _value = attributes[field]
+                    try:
+                        setattr(obj, field, _value)
+                    except AttributeError:
+                        _model = type(obj)
+                        _attribute = getattr(_model, field)
+                        _composite = _attribute.property.composite_class
+                        if isinstance(_value, dict):
+                            _converted_value = _composite(**_value)
+                        else:
+                            _converted_value = _composite(*_value)
+                        setattr(obj, field, _converted_value)
             obj.save()
 
             if self._after_update_callback:
