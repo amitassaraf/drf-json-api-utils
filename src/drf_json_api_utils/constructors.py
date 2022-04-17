@@ -5,7 +5,7 @@ from types import FunctionType
 from typing import Type, Dict, Tuple, Sequence, Callable
 
 import inflection
-from django.db.models import QuerySet, Model
+from django.db.models import QuerySet, Model, ForeignKey
 from django.utils.module_loading import import_string as import_class_from_dotted_path
 from django_filters.filterset import BaseFilterSet
 from django_filters.rest_framework import FilterSet
@@ -21,8 +21,24 @@ from rest_framework_json_api.utils import get_resource_type_from_serializer, get
     get_resource_type_from_queryset
 
 from .generic_relation import GenericRelatedField
-from .namespace import _RESOURCE_NAME_TO_SPICE, _MODEL_TO_SERIALIZERS
+from .namespace import _RESOURCE_NAME_TO_SPICE, _MODEL_TO_SERIALIZERS, _append_to_namespace
 from .types import CustomField, Relation, Filter, GenericRelation, ComputedFilter
+
+
+# Create a liar list that when we query it's length we get the real amount of items in the db but
+# when displaying it, limit to the related_limit provided.
+class LiarList(list):
+
+    @property
+    def real_count(self):
+        return self._real_count
+
+    @real_count.setter
+    def real_count(self, count):
+        self._real_count = count
+
+    def __len__(self):
+        return self.real_count
 
 
 def _construct_serializer(serializer_prefix: str, serializer_suffix: str,
@@ -30,7 +46,7 @@ def _construct_serializer(serializer_prefix: str, serializer_suffix: str,
                           custom_fields: Sequence[CustomField], relations: Sequence[Relation],
                           generic_relations: Sequence[GenericRelation], related_limit: int,
                           primary_key_name: str, on_validate: FunctionType = None,
-                          after_list_callback: Callable = None, is_admin: bool = False) -> Type:
+                          after_list_callback: Callable = None, is_admin: bool = False, dummy_includes=[]) -> Type:
     serializer_name = f'{"Admin" if is_admin else ""}{serializer_prefix}{resource_name}Serializer{serializer_suffix}'
     if model in _MODEL_TO_SERIALIZERS:
         found_serializer = list(
@@ -48,16 +64,16 @@ def _construct_serializer(serializer_prefix: str, serializer_suffix: str,
             for value in iterable[:related_limit]
         ]
 
-        # Create a liar list that when we query it's length we get the real amount of items in the db but
-        # when displaying it, limit to the related_limit provided.
-        class LiarList(list):
-            def __len__(self):
-                return real_count
-
-        return LiarList(data)
+        liar = LiarList(data)
+        liar.real_count = real_count
+        return liar
 
     def generate_relation_field(relation):
         def filter_relationship(self, instance, relationship):
+            relationship_field = getattr(relationship, 'field', None)
+            if isinstance(relationship_field, ForeignKey):
+                relationship = relationship.model.objects.filter(**{relationship_field.name: instance})
+
             if relation.resource_name in _RESOURCE_NAME_TO_SPICE and not is_admin:
                 return _RESOURCE_NAME_TO_SPICE[relation.resource_name](self.context['request'], relationship)
             return relationship
@@ -84,9 +100,10 @@ def _construct_serializer(serializer_prefix: str, serializer_suffix: str,
                     list_kwargs[key] = kwargs[key]
             return many_related(**list_kwargs)
 
-        resource_related_field = type(f'{"Admin" if is_admin else ""}{resource_name}ManyRelatedField', (ResourceRelatedField,), {
-            'many_init': many_init
-        })
+        resource_related_field = type(f'{"Admin" if is_admin else ""}{resource_name}ManyRelatedField',
+                                      (ResourceRelatedField,), {
+                                          'many_init': many_init
+                                      })
 
         return resource_related_field
 
@@ -103,6 +120,12 @@ def _construct_serializer(serializer_prefix: str, serializer_suffix: str,
     for relation in relations:
         included_serializers[
             relation.field] = f'drf_json_api_utils.namespace.{"Admin" if is_admin else ""}{f"{serializer_prefix}{relation.resource_name}Serializer{relation.api_version}"}'
+
+    for include in dummy_includes or []:
+        dummy_serializer = type(f'{"Admin" if is_admin else ""}{f"{serializer_prefix}{include}Serializer"}',
+                                (serializers.Serializer,), {})
+        _append_to_namespace(dummy_serializer)
+        included_serializers[include] = f'drf_json_api_utils.namespace.{dummy_serializer.__name__}'
 
     for relation in generic_relations:
         for related in getattr(relation, 'related', []):
@@ -271,10 +294,13 @@ def _construct_serializer(serializer_prefix: str, serializer_suffix: str,
     _MODEL_TO_SERIALIZERS[model].append(new_serializer)
     return new_serializer
 
+
 def construct_new_filters(computed_filter):
-        def _generate_new_filters(self, queryset, field_name, value):
-            return computed_filter.filter_func(queryset, value)
-        return _generate_new_filters
+    def _generate_new_filters(self, queryset, field_name, value):
+        return computed_filter.filter_func(queryset, value)
+
+    return _generate_new_filters
+
 
 def _construct_filter_backend(model: Type[Model], resource_name: str, filters: Dict[str, Filter],
                               computed_filters: Dict[str, ComputedFilter]) -> Tuple[Type, Type]:

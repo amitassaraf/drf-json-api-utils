@@ -1,5 +1,4 @@
 from copy import deepcopy
-from functools import partial
 from typing import Type, Sequence, Tuple, Dict, List, Optional, Callable, Any
 
 import traceback
@@ -15,18 +14,52 @@ from sqlalchemy.inspection import inspect
 from sqlalchemy.orm import Query
 from sqlalchemy_filters import apply_filters
 from sqlalchemy_filters import apply_pagination
+from django.conf.urls import url
 
-from drf_json_api_utils import json_api_spec_http_methods, JsonApiResourceViewBuilder, plugins, CustomField
+from drf_json_api_utils import json_api_spec_http_methods, JsonApiResourceViewBuilder, CustomField
 from drf_json_api_utils.sql_alchemy.constructors import auto_construct_schema, AlchemyRelation
-from drf_json_api_utils.sql_alchemy.types import AlchemyComputedFilter
+from drf_json_api_utils.sql_alchemy.types import AlchemyComputedFilter, OKAlreadyExists
 from .namespace import _TYPE_TO_SCHEMA
-from ..common import LOGGER
+from ..common import LOGGER, JsonApiGlobalSettings
 
 
 class AlchemyJsonApiViewBuilder:
     """
     This class assumes use of Landa's ManagerBase and AlchemyBase
     """
+
+    ATTRIBUTES = {
+        '_custom_field_handlers': {'kwarg': 'custom_field_handlers', 'default': None},
+        '_model': {'kwarg': 'alchemy_model', 'default': None},
+        '_resource_name': {'kwarg': 'resource_name', 'default': None},
+        '_fields': {'kwarg': 'fields', 'default': None},
+        '_primary_key': {'kwarg': 'primary_key', 'default': 'id'},
+        '_allowed_methods': {'kwarg': 'allowed_methods', 'default': None},
+        '_base_query': {'kwarg': 'base_query', 'default': None},
+        '_permitted_objects': {'kwarg': 'permitted_objects', 'default': None},
+        '_page_size': {'kwarg': 'page_size', 'default': 50},
+        '_permission_classes': {'kwarg': 'permission_classes', 'default': []},
+        '_authentication_classes': {'kwarg': 'authentication_classes', 'default': []},
+        '_before_create_callback': {'kwarg': None, 'default': None},
+        '_after_create_callback': {'kwarg': None, 'default': None},
+        '_after_get_callback': {'kwarg': None, 'default': None},
+        '_before_update_callback': {'kwarg': None, 'default': None},
+        '_after_update_callback': {'kwarg': None, 'default': None},
+        '_before_delete_callback': {'kwarg': None, 'default': None},
+        '_after_delete_callback': {'kwarg': None, 'default': None},
+        '_before_list_callback': {'kwarg': None, 'default': None},
+        '_after_list_callback': {'kwarg': None, 'default': None},
+        '_before_get_response': {'kwarg': None, 'default': None},
+        '_after_serialization': {'kwarg': None, 'default': None},
+        '_relations': {'kwarg': None, 'default': []},
+        '_custom_fields': {'kwarg': None, 'default': {}},
+        '_computed_filters': {'kwarg': None, 'default': {}},
+        '_api_version': {'kwarg': 'api_version', 'default': ''},
+        '_is_admin': {'kwarg': 'is_admin', 'default': False},
+        '_always_include': {'kwarg': 'always_include', 'default': False},
+        '_skip_plugins': {'kwarg': 'skip_plugins', 'default': []},
+        '_plugin_options': {'kwarg': 'plugin_options', 'default': {}},
+    }
 
     def __init__(self,
                  alchemy_model: Type,
@@ -43,39 +76,75 @@ class AlchemyJsonApiViewBuilder:
                  skip_plugins: Optional[Sequence[str]] = None,
                  include_plugins: Optional[Sequence[str]] = None,
                  plugin_options: Optional[Dict[str, Any]] = None,
-                 custom_field_handlers: Optional[Dict[Type, Callable]] = None):
-        self._custom_field_handlers = custom_field_handlers
-        self._model = alchemy_model
-        self._resource_name = resource_name
-        self._fields = fields
-        self._primary_key = primary_key
-        self._allowed_methods = allowed_methods
-        self._base_query = base_query
-        self._permitted_objects = permitted_objects
-        self._page_size = page_size
-        self._permission_classes = permission_classes or []
-        self._authentication_classes = authentication_classes or []
-        self._before_create_callback = None
-        self._after_create_callback = None
-        self._after_get_callback = None
-        self._before_update_callback = None
-        self._after_update_callback = None
-        self._before_delete_callback = None
-        self._after_delete_callback = None
-        self._before_list_callback = None
-        self._after_list_callback = None
-        self._before_get_response = None
-        self._relations = []
-        self._custom_fields = {}
-        self._computed_filters = {}
-        self._api_version = api_version
-        self._is_admin = False
-        self._skip_plugins = skip_plugins if skip_plugins is not None else [plugins.AUTO_ADMIN_VIEWS]
-        include_plugins = include_plugins or []
-        for item in include_plugins:
-            if item in self._skip_plugins:
-                self._skip_plugins.remove(item)
-        self._plugin_options = plugin_options or {}
+                 custom_field_handlers: Optional[Dict[Type, Callable]] = None,
+                 is_admin: Optional[bool] = False,
+                 always_include: Optional[bool] = False):
+        self.override(
+            alchemy_model=alchemy_model,
+            resource_name=resource_name,
+            fields=fields,
+            api_version=api_version,
+            primary_key=primary_key,
+            allowed_methods=allowed_methods,
+            base_query=base_query,
+            permitted_objects=permitted_objects,
+            permission_classes=permission_classes,
+            authentication_classes=authentication_classes,
+            page_size=page_size,
+            skip_plugins=skip_plugins,
+            include_plugins=include_plugins,
+            plugin_options=plugin_options,
+            custom_field_handlers=custom_field_handlers,
+            is_admin=is_admin,
+            always_include=always_include,
+        )
+        self.settings = JsonApiGlobalSettings()
+
+    @staticmethod
+    def from_view_builder(view_builder: 'AlchemyJsonApiViewBuilder') -> 'AlchemyJsonApiViewBuilder':
+        return deepcopy(view_builder)
+
+    def override(self,
+                 alchemy_model: Optional[Type] = None,
+                 resource_name: Optional[str] = None,
+                 fields: Optional[Sequence[str]] = None,
+                 api_version: Optional[str] = None,
+                 primary_key: Optional[str] = None,
+                 allowed_methods: Optional[Sequence[str]] = None,
+                 base_query: Optional[Callable[[Any], Query]] = None,
+                 permitted_objects: Optional[Callable[[Request, Query], Query]] = None,
+                 permission_classes: Optional[Sequence[Type[BasePermission]]] = None,
+                 authentication_classes: Optional[Sequence[Type[BaseAuthentication]]] = None,
+                 page_size: Optional[int] = None,
+                 skip_plugins: Optional[Sequence[str]] = None,
+                 include_plugins: Optional[Sequence[str]] = None,
+                 plugin_options: Optional[Dict[str, Any]] = None,
+                 custom_field_handlers: Optional[Dict[Type, Callable]] = None,
+                 is_admin: Optional[bool] = False,
+                 always_include: Optional[bool] = False) -> 'AlchemyJsonApiViewBuilder':
+
+        _locals = locals()
+        for attribute, settings in self.ATTRIBUTES.items():
+            _arg = _locals.get(settings.get("kwarg"))
+            if _arg is not None:
+                setattr(self, attribute, _arg)
+            elif not hasattr(self, attribute):
+                setattr(self, attribute, deepcopy(settings.get("default")))
+
+        if include_plugins is not None:
+            for item in include_plugins:
+                if item in self._skip_plugins:
+                    self._skip_plugins.remove(item)
+
+        return self
+
+    @property
+    def is_admin(self) -> bool:
+        return self._is_admin
+
+    @property
+    def always_include(self) -> bool:
+        return self._always_include
 
     def __warn_if_method_not_available(self, method: str):
         if method not in self._allowed_methods:
@@ -134,6 +203,16 @@ class AlchemyJsonApiViewBuilder:
         self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_GET)
         return self
 
+    def after_serialization(self, after_serialization: Callable[[Any, Any], Any] = None) -> 'AlchemyJsonApiViewBuilder':
+        self._after_serialization = after_serialization
+        self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_GET)
+        return self
+
+    def add_field(self, name: str) -> 'AlchemyJsonApiViewBuilder':
+        if name not in self._fields:
+            self._fields.append(name)
+        return self
+
     def add_relation(self, field: str,
                      model: Type,
                      resource_name: str,
@@ -156,31 +235,24 @@ class AlchemyJsonApiViewBuilder:
         self._custom_fields[name] = CustomField(name=name, callback=instance_callback)
         return self
 
-    def _get_admin_urls(self) -> Sequence[partial]:
-        admin_builder = deepcopy(self)
-        admin_builder._skip_plugins = [plugins.AUTO_ADMIN_VIEWS]
-        admin_builder._permitted_objects = None
-        admin_permission_class = admin_builder._plugin_options.get(plugins.AUTO_ADMIN_VIEWS, {}).get(
-            'ADMIN_PERMISSION_CLASS')
-        admin_builder._is_admin = True
-
-        if admin_permission_class is not None:
-            admin_builder._permission_classes = [*admin_builder._permission_classes, admin_permission_class]
-
-        admin_urls = admin_builder.get_urls(url_resource_name=self._resource_name, urls_prefix='admin/',
-                                            ignore_serializer=True)
-
-        return admin_urls
-
-    def get_urls(self, url_resource_name: str = '', urls_prefix: str = '', ignore_serializer: bool = False):
+    def get_urls(self,
+                 url_resource_name: Optional[str] = None,
+                 urls_prefix: Optional[str] = None,
+                 ignore_serializer: Optional[bool] = False) -> List[url]:
+        SchemaType = None
         if ignore_serializer:
-            SchemaType = list(filter(lambda item: item['api_version'] == self._api_version,
-                                     _TYPE_TO_SCHEMA[self._model]))[0]['serializer']
-        else:
+            SchemaType = list(
+                filter(lambda item: item['api_version'] == self._api_version and item['is_admin'] == self.is_admin,
+                       _TYPE_TO_SCHEMA[self._model]))
+            if SchemaType:
+                SchemaType = SchemaType[0]['serializer']
+
+        if not SchemaType:
             SchemaType = auto_construct_schema(self._model,
                                                resource_name=self._resource_name,
                                                api_version=self._api_version,
                                                fields=self._fields,
+                                               is_admin=self._is_admin,
                                                support_relations=self._relations,
                                                custom_field_handlers=self._custom_field_handlers,
                                                custom_fields=self._custom_fields)
@@ -190,7 +262,7 @@ class AlchemyJsonApiViewBuilder:
         def default_permitted_objects(request, query):
             return query
 
-        def render_includes(includes, objects):
+        def render_includes(includes, objects, request):
 
             #
             #  Go over all the keys that the user wants to include, and serialize them
@@ -214,23 +286,26 @@ class AlchemyJsonApiViewBuilder:
                     #  Fetch all the related items to be included in the result
                     to_include = target_model.objects.query().filter(primary_join,
                                                                      getattr(self._model, primary_key).in_(
-                                                                         [getattr(item, local_column.name) for item in
+                                                                         [getattr(item, primary_key) for item in
                                                                           objects]
                                                                      )).all()
-                    schema = list(filter(lambda item: item['api_version'] == self._api_version,
-                                _TYPE_TO_SCHEMA[target_model]))[0]
+                    relevant_relation = next(
+                        (relation for relation in self._relations if relation.field_name == include), None)
+                    schema = list(filter(lambda item: item['api_version'] == relevant_relation.api_version and item[
+                        'is_admin'] == self.is_admin,
+                                         _TYPE_TO_SCHEMA[target_model]))[0]
                     target_many = schema['serializer'](many=True)
                     #  Serialize all the included objects to JSON:API
+                    target_many.context = {'request': request}
                     include_result = target_many.json_api_dump(to_include, schema['resource_name'],
                                                                with_data=False)
                     rendered_includes.extend(include_result)
-                else:
-                    raise Exception(f'Include {include} not supported on type {self._resource_name}')
+
             return rendered_includes
 
         permitted_objects = self._permitted_objects or default_permitted_objects
 
-        def object_get(request, identifier, *args, **kwargs) -> Tuple[Dict, int]:
+        def object_get(request, identifier, includes, *args, **kwargs) -> Tuple[Dict, int]:
             permitted_query = permitted_objects(request,
                                                 self._base_query() if self._base_query is not None else self._model.objects.query())
 
@@ -242,17 +317,19 @@ class AlchemyJsonApiViewBuilder:
                 obj = None
             finally:
                 if not obj:
-                    return {}, HTTP_404_NOT_FOUND
+                    return {}, [], HTTP_404_NOT_FOUND
 
             if self._after_get_callback:
                 obj = self._after_get_callback(request, obj)
 
+            rendered_includes = render_includes(includes, [obj], request)
+            schema.context = {'request': request}
             result = schema.json_api_dump(obj, self._resource_name)
 
             if self._before_get_response:
                 result = self._before_get_response(request, obj, result)
 
-            return result, HTTP_200_OK
+            return result, rendered_includes, HTTP_200_OK
 
         def object_list(request, page, filters=None, includes=None, *args, **kwargs) -> Tuple[List, List, int, int]:
             permitted_query = permitted_objects(request,
@@ -284,17 +361,22 @@ class AlchemyJsonApiViewBuilder:
 
             #  Fetch the values from DB
             objects = query.all()
+            rendered_includes = render_includes(includes, objects, request)
 
-            rendered_includes = render_includes(includes, objects)
-
-            if self._after_list_callback:
-                try:
+            try:
+                if self._after_list_callback:
                     objects = self._after_list_callback(request, objects)
-                except Exception as e:
-                    traceback.print_exc()
-                    return [{'errors': [str(e)]}], [], 0, getattr(e, 'http_status', HTTP_500_INTERNAL_SERVER_ERROR)
 
-            result = schema_many.json_api_dump(objects, self._resource_name)
+                schema_many.context = {'request': request}
+                result = schema_many.json_api_dump(objects, self._resource_name)
+
+                if self._after_serialization:
+                    result, rendered_includes = self._after_serialization(request, result, rendered_includes)
+
+            except Exception as e:
+                # Raise to DRF handler
+                raise e
+
             return result, rendered_includes, pagination.total_results, HTTP_200_OK
 
         def object_create(request, data, *args, **kwargs) -> Tuple[Dict, str, int]:
@@ -305,11 +387,14 @@ class AlchemyJsonApiViewBuilder:
             if self._before_create_callback:
                 try:
                     attributes = self._before_create_callback(request, attributes)
+                except OKAlreadyExists:
+                    return {'status': 'OK'}, '', HTTP_201_CREATED
                 except Exception as e:
-                    traceback.print_exc()
-                    return {'errors': [str(e)]}, '', getattr(e, 'http_status', HTTP_500_INTERNAL_SERVER_ERROR)
+                    # Raise to DRF handler
+                    raise e
 
             try:
+                schema.context = {'request': request}
                 unmarshal_obj = schema.load(attributes, session=schema.db.session, unknown=INCLUDE)
             except ValidationError as err:
                 return err.messages, '', HTTP_400_BAD_REQUEST
@@ -321,10 +406,11 @@ class AlchemyJsonApiViewBuilder:
                 try:
                     self._after_create_callback(request, attributes, obj)
                 except Exception as e:
-                    traceback.print_exc()
-                    return {'errors': [str(e)]}, '', getattr(e, 'http_status', HTTP_500_INTERNAL_SERVER_ERROR)
+                    # Raise to DRF handler
+                    raise e
                 obj.refresh_from_db()
 
+            schema.context = {'request': request}
             result = schema.json_api_dump(obj, self._resource_name)
             return result, obj.id, HTTP_201_CREATED
 
@@ -345,8 +431,8 @@ class AlchemyJsonApiViewBuilder:
                 try:
                     attributes = self._before_update_callback(request, attributes, obj)
                 except Exception as e:
-                    traceback.print_exc()
-                    return {'errors': [str(e)]}, getattr(e, 'http_status', HTTP_500_INTERNAL_SERVER_ERROR)
+                    # Raise to DRF handler
+                    raise e
                 obj.refresh_from_db()
 
             for field in self._fields:
@@ -358,10 +444,11 @@ class AlchemyJsonApiViewBuilder:
                 try:
                     self._after_update_callback(request, obj)
                 except Exception as e:
-                    traceback.print_exc()
-                    return {'errors': [str(e)]}, getattr(e, 'http_status', HTTP_500_INTERNAL_SERVER_ERROR)
+                    # Raise to DRF handler
+                    raise e
                 obj.refresh_from_db()
 
+            schema.context = {'request': request}
             result = schema.json_api_dump(obj, self._resource_name)
             return result, HTTP_200_OK
 
@@ -373,8 +460,8 @@ class AlchemyJsonApiViewBuilder:
                 try:
                     obj = self._before_delete_callback(request, obj)
                 except Exception as e:
-                    traceback.print_exc()
-                    return getattr(e, 'http_status', HTTP_500_INTERNAL_SERVER_ERROR)
+                    # Raise to DRF handler
+                    raise e
             if obj:
                 obj.delete()
 
@@ -382,8 +469,8 @@ class AlchemyJsonApiViewBuilder:
                     try:
                         self._after_delete_callback(request, obj)
                     except Exception as e:
-                        traceback.print_exc()
-                        return getattr(e, 'http_status', HTTP_500_INTERNAL_SERVER_ERROR)
+                        # Raise to DRF handler
+                        raise e
             return HTTP_204_NO_CONTENT
 
         builder = JsonApiResourceViewBuilder(action_name=self._resource_name,
@@ -393,6 +480,7 @@ class AlchemyJsonApiViewBuilder:
                                              permission_classes=self._permission_classes,
                                              authentication_classes=self._authentication_classes,
                                              is_admin=self._is_admin,
+                                             always_include=self._always_include,
                                              page_size=self._page_size,
                                              raw_items=True)
 
@@ -409,8 +497,5 @@ class AlchemyJsonApiViewBuilder:
             builder = builder.on_delete(delete_callback=object_delete)
 
         urls = builder.get_urls(urls_prefix=urls_prefix, url_resource_name=url_resource_name)
-
-        if plugins.AUTO_ADMIN_VIEWS not in self._skip_plugins:
-            urls.extend(self._get_admin_urls())
 
         return urls
