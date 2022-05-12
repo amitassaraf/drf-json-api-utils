@@ -22,6 +22,7 @@ from drf_json_api_utils.sql_alchemy.types import AlchemyComputedFilter, OKAlread
 from .namespace import _TYPE_TO_SCHEMA
 from ..common import LOGGER, JsonApiGlobalSettings
 
+DEFAULT_VOID_DECORATOR = lambda func: func
 
 class AlchemyJsonApiViewBuilder:
     """
