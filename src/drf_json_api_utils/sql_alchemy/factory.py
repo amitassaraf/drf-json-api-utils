@@ -51,6 +51,11 @@ class AlchemyJsonApiViewBuilder:
         '_after_list_callback': {'kwarg': None, 'default': None},
         '_before_get_response': {'kwarg': None, 'default': None},
         '_after_serialization': {'kwarg': None, 'default': None},
+        '_create_decorator': {'kwarg': None, 'default': DEFAULT_VOID_DECORATOR},
+        '_get_decorator': {'kwarg': None, 'default': DEFAULT_VOID_DECORATOR},
+        '_update_decorator': {'kwarg': None, 'default': DEFAULT_VOID_DECORATOR},
+        '_delete_decorator': {'kwarg': None, 'default': DEFAULT_VOID_DECORATOR},
+        '_list_decorator': {'kwarg': None, 'default': DEFAULT_VOID_DECORATOR},
         '_relations': {'kwarg': None, 'default': []},
         '_custom_fields': {'kwarg': None, 'default': {}},
         '_computed_filters': {'kwarg': None, 'default': {}},
@@ -205,6 +210,34 @@ class AlchemyJsonApiViewBuilder:
 
     def after_serialization(self, after_serialization: Callable[[Any, Any], Any] = None) -> 'AlchemyJsonApiViewBuilder':
         self._after_serialization = after_serialization
+        self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_GET)
+        return self
+
+    def set_create_decorator(self,
+                             create_decorator: Callable[[Callable], Callable] = None) -> 'JsonApiModelViewBuilder':
+        self._create_decorator = create_decorator
+        self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_GET)
+        return self
+
+    def set_get_decorator(self, get_decorator: Callable[[Callable], Callable] = None) -> 'JsonApiModelViewBuilder':
+        self._get_decorator = get_decorator
+        self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_GET)
+        return self
+
+    def set_update_decorator(self,
+                             update_decorator: Callable[[Callable], Callable] = None) -> 'JsonApiModelViewBuilder':
+        self._update_decorator = update_decorator
+        self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_GET)
+        return self
+
+    def set_delete_decorator(self,
+                             delete_decorator: Callable[[Callable], Callable] = None) -> 'JsonApiModelViewBuilder':
+        self._delete_decorator = delete_decorator
+        self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_GET)
+        return self
+
+    def set_list_decorator(self, list_decorator: Callable[[Callable], Callable] = None) -> 'JsonApiModelViewBuilder':
+        self._list_decorator = list_decorator
         self.__warn_if_method_not_available(json_api_spec_http_methods.HTTP_GET)
         return self
 
@@ -493,7 +526,12 @@ class AlchemyJsonApiViewBuilder:
                                              is_admin=self._is_admin,
                                              always_include=self._always_include,
                                              page_size=self._page_size,
-                                             raw_items=True)
+                                             raw_items=True,
+                                             create_decorator=self._create_decorator,
+                                             get_decorator=self._get_decorator,
+                                             delete_decorator=self._delete_decorator,
+                                             list_decorator=self._list_decorator,
+                                             update_decorator=self._update_decorator)
 
         if json_api_spec_http_methods.HTTP_GET in self._allowed_methods:
             builder = builder.on_get(get_callback=object_get).on_list(list_callback=object_list)
