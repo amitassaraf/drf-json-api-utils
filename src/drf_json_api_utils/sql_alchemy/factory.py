@@ -24,6 +24,7 @@ from ..common import LOGGER, JsonApiGlobalSettings
 
 DEFAULT_VOID_DECORATOR = lambda func: func
 
+
 class AlchemyJsonApiViewBuilder:
     """
     This class assumes use of Landa's ManagerBase and AlchemyBase
@@ -365,7 +366,8 @@ class AlchemyJsonApiViewBuilder:
 
             return result, rendered_includes, HTTP_200_OK
 
-        def object_list(request, page, filters=None, includes=None, *args, **kwargs) -> Tuple[List, List, int, int]:
+        def object_list(request, page, filters=None, includes=None, *args, page_size=None, **kwargs) -> Tuple[
+            List, List, int, int]:
             permitted_query = permitted_objects(request,
                                                 self._base_query() if self._base_query is not None else self._model.objects.query())
             #
@@ -388,7 +390,8 @@ class AlchemyJsonApiViewBuilder:
             #
             #  Paginate the result
             #
-            query, pagination = apply_pagination(filtered_query, page_number=int(page), page_size=self._page_size)
+            query, pagination = apply_pagination(filtered_query, page_number=int(page),
+                                                 page_size=page_size or self._page_size)
 
             if self._before_list_callback:
                 query = self._before_list_callback(request, query)

@@ -843,13 +843,14 @@ class JsonApiResourceViewBuilder:
                     filters.append({'field': match.groupdict()['field'],
                                     'op': op,
                                     'value': value.split(',') if multiple_values else value})
-            page = int(params.get('page_number', 1))
+            page = int(params.get('page_number', params.get('page[number]', 1)))
+            page_size = int(params.get('page_size', params.get('page[size]', self._page_size)))
             include = params.get('include', '')
             includes = include.split(',') if include else []
             if self._on_list_callback is not None:
                 data, included, count, status = self._on_list_callback(request, page, filters, includes, *args,
-                                                                       **kwargs)
-                pages = math.ceil(count / self._page_size)
+                                                                       page_size=page_size, **kwargs)
+                pages = math.ceil(count / page_size)
                 return Response(data={'links': {
                     "first": f"/api/{self._resource_name}?page_number=1",
                     "last": f"/api/{self._resource_name}?page_number={pages}",
