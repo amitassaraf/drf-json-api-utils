@@ -884,7 +884,8 @@ class JsonApiResourceViewBuilder:
                 if self._raw_items:
                     return Response(data={'id': identifier, 'type': self._resource_name, 'attributes': data},
                                     status=status)
-                data.update({'included': included})
+                if data:
+                    data.update({'included': included})
                 return Response(data=data, status=status)
 
         class Renderer(JSONRenderer):
