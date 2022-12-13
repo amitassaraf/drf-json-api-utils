@@ -14,7 +14,6 @@ from sqlalchemy.inspection import inspect
 from sqlalchemy.orm import Query
 from sqlalchemy_filters import apply_filters
 from sqlalchemy_filters import apply_pagination
-from django.conf.urls import url
 
 from drf_json_api_utils import json_api_spec_http_methods, JsonApiResourceViewBuilder, CustomField
 from drf_json_api_utils.sql_alchemy.constructors import auto_construct_schema, AlchemyRelation
@@ -273,7 +272,7 @@ class AlchemyJsonApiViewBuilder:
     def get_urls(self,
                  url_resource_name: Optional[str] = None,
                  urls_prefix: Optional[str] = None,
-                 ignore_serializer: Optional[bool] = False) -> List[url]:
+                 ignore_serializer: Optional[bool] = False) -> List[Any]:
         SchemaType = None
         if ignore_serializer:
             SchemaType = list(
