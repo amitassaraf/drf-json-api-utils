@@ -653,7 +653,7 @@ class JsonApiModelViewBuilder:
                     list_method_view_set.as_view(get_dict_by_methods('list', self._allowed_methods),
                                                  name=f'list_{self._resource_name}'),
                     name=f'list-{"admin_view_" if self._is_admin else ""}{self._resource_name}{self._api_version}'),
-                re_path(rf'^{urls_prefix}{url_resource_name}/(?P<{pk_name}>[^/.]+)$',
+                re_path(rf'^{urls_prefix}{url_resource_name}/(?P<{pk_name}>[^/.]+)/?$',
                     get_method_view_set.as_view(get_dict_by_methods('get', self._allowed_methods),
                                                 name=f'get_{self._resource_name}'),
                     name=f'{"admin_view_" if self._is_admin else ""}{self._resource_name}{self._api_version}-detail'),
@@ -666,7 +666,7 @@ class JsonApiModelViewBuilder:
                 relation_view_dict = get_dict_by_methods('relation', self._allowed_methods)
                 if relation_view_dict:
                     urls.extend([
-                        re_path(rf'^{urls_prefix}{url_resource_name}/(?P<{pk_name}>[^/.]+)/(?P<related_field>\w+)$',
+                        re_path(rf'^{urls_prefix}{url_resource_name}/(?P<{pk_name}>[^/.]+)/(?P<related_field>\w+)/?$',
                             list_method_view_set.as_view(relation_view_dict, name=f'related_{self._resource_name}'),
                             name=f'related-{"admin_view_" if self._is_admin else ""}{self._resource_name}{self._api_version}'),
                     ])
@@ -981,7 +981,7 @@ class JsonApiResourceViewBuilder:
             if 'get' in view_dict:
                 view_dict['get'] = 'get'
             urls.extend([
-                re_path(rf'^{urls_prefix}{url_resource_name}{urls_suffix}/(?P<{self._unique_identifier}>[^/.]+)$',
+                re_path(rf'^{urls_prefix}{url_resource_name}{urls_suffix}/(?P<{self._unique_identifier}>[^/.]+)/?$',
                     patch_view_set.as_view(view_dict,
                                            name=f'get_{self._resource_name}'),
                     name=f'{"admin_view_" if self._is_admin else ""}{self._resource_name}{self._api_version}-detail')
