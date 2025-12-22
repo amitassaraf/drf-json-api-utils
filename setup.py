@@ -34,7 +34,7 @@ setup(
     packages=find_packages(where='src'),
     python_requires='>=3.5',
     install_requires=['django>=3.0.0', 'djangorestframework-jsonapi', 'djangorestframework', 'django-filter',
-                      'rest-framework-generic-relations==2.1.*', 'sqlalchemy_filters', 'marshmallow==3.7.1',
+                      'rest-framework-generic-relations==2.1.*', 'sqlalchemy_filters', 'marshmallow==3.26.2',
                       'marshmallow-sqlalchemy==0.23.1', 'sqlalchemy>=1.3.19,<=1.4.43', 'recordclass', 'ujson'],
     extras_require={
         'dev': ['check-manifest'],
